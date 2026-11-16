@@ -1,0 +1,541 @@
+
+--==================================================
+-- ZYRUX SPACE CHRISTMAS V4
+-- NO PANEL | SPACE BACKGROUND
+-- NEON CHRISTMAS LETTERS | DELTA MOBILE
+--==================================================
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local LP = Players.LocalPlayer
+
+local NAME = "ZYRUX_SPACE_V4"
+
+local parent
+pcall(function()
+    parent = gethui()
+end)
+if not parent then
+    parent = LP:WaitForChild("PlayerGui")
+end
+
+pcall(function()
+    local old = parent:FindFirstChild(NAME)
+    if old then old:Destroy() end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = NAME
+gui.IgnoreGuiInset = true
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999999
+gui.Parent = parent
+
+local alive = true
+
+local function make(class,p,props)
+    local o = Instance.new(class)
+    for k,v in pairs(props) do o[k]=v end
+    o.Parent=p
+    return o
+end
+
+local function tw(o,t,props,style)
+    if not o or not o.Parent then return end
+    local x=TweenService:Create(
+        o,
+        TweenInfo.new(t,style or Enum.EasingStyle.Quint,
+        Enum.EasingDirection.Out),
+        props
+    )
+    x:Play()
+    return x
+end
+
+local function finish()
+    if not alive then return end
+    alive=false
+    for _,o in ipairs(gui:GetDescendants()) do
+        if o:IsA("TextLabel") or o:IsA("TextButton") then
+            tw(o,0.3,{TextTransparency=1})
+        elseif o:IsA("Frame") then
+            tw(o,0.3,{BackgroundTransparency=1})
+        end
+    end
+    task.delay(0.4,function()
+        if gui.Parent then gui:Destroy() end
+    end)
+end
+
+--==================================================
+-- SPACE BACKGROUND
+--==================================================
+
+local bg=make("Frame",gui,{
+    Size=UDim2.fromScale(1,1),
+    BackgroundColor3=Color3.fromRGB(1,2,8),
+    BorderSizePixel=0
+})
+
+make("UIGradient",bg,{
+    Rotation=45,
+    Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(2,4,16)),
+        ColorSequenceKeypoint.new(0.5,Color3.fromRGB(8,4,20)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(1,5,12))
+    })
+})
+
+-- Nebula glow
+
+local function nebula(x,y,size,color)
+    local f=make("Frame",bg,{
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.fromScale(x,y),
+        Size=UDim2.fromOffset(size,size),
+        BackgroundColor3=color,
+        BackgroundTransparency=0.82,
+        BorderSizePixel=0
+    })
+    make("UICorner",f,{
+        CornerRadius=UDim.new(1,0)
+    })
+    make("UIGradient",f,{
+        Transparency=NumberSequence.new({
+            NumberSequenceKeypoint.new(0,0.1),
+            NumberSequenceKeypoint.new(1,1)
+        })
+    })
+end
+
+nebula(0.2,0.3,350,Color3.fromRGB(0,90,120))
+nebula(0.8,0.7,400,Color3.fromRGB(100,0,50))
+nebula(0.5,0.5,300,Color3.fromRGB(0,80,55))
+
+--==================================================
+-- STARS
+--==================================================
+
+math.randomseed(math.floor(os.clock()*100000))
+
+for i=1,100 do
+    local size=math.random(1,3)
+    local star=make("Frame",bg,{
+        Size=UDim2.fromOffset(size,size),
+        Position=UDim2.fromScale(math.random(),math.random()),
+        BackgroundColor3=Color3.fromRGB(230,240,255),
+        BackgroundTransparency=math.random(10,60)/100,
+        BorderSizePixel=0
+    })
+    make("UICorner",star,{
+        CornerRadius=UDim.new(1,0)
+    })
+
+    task.spawn(function()
+        while alive and star.Parent do
+            tw(star,math.random(1,3),{
+                BackgroundTransparency=0.9
+            },Enum.EasingStyle.Sine)
+            task.wait(2)
+            if not alive then break end
+            tw(star,1,{
+                BackgroundTransparency=0.2
+            })
+            task.wait(1)
+        end
+    end)
+end
+
+--==================================================
+-- SPACE SNOW
+--==================================================
+
+for i=1,35 do
+    local snow=make("TextLabel",bg,{
+        Size=UDim2.fromOffset(12,12),
+        Position=UDim2.fromScale(math.random(),math.random()),
+        BackgroundTransparency=1,
+        Text="✦",
+        TextColor3=Color3.fromRGB(210,230,255),
+        TextSize=math.random(7,13),
+        TextTransparency=0.25
+    })
+
+    task.spawn(function()
+        while alive and snow.Parent do
+            local duration=math.random(5,9)
+            tw(snow,duration,{
+                Position=UDim2.fromScale(
+                    math.random(),
+                    1.1
+                ),
+                Rotation=180
+            },Enum.EasingStyle.Linear)
+            task.wait(duration)
+            if alive and snow.Parent then
+                snow.Position=UDim2.fromScale(
+                    math.random(),-0.1
+                )
+                snow.Rotation=0
+            end
+        end
+    end)
+end
+
+--==================================================
+-- SKIP
+--==================================================
+
+local skip=make("TextButton",gui,{
+    Size=UDim2.fromOffset(78,32),
+    Position=UDim2.new(1,-92,0,18),
+    BackgroundColor3=Color3.fromRGB(12,15,23),
+    BackgroundTransparency=0.2,
+    Text="SKIP »",
+    TextColor3=Color3.fromRGB(255,255,255),
+    TextSize=12,
+    Font=Enum.Font.GothamBold,
+    AutoButtonColor=true
+})
+
+make("UICorner",skip,{
+    CornerRadius=UDim.new(0,9)
+})
+
+make("UIStroke",skip,{
+    Color=Color3.fromRGB(30,255,140),
+    Thickness=1
+})
+
+skip.Activated:Connect(finish)
+
+--==================================================
+-- LOGO
+--==================================================
+
+local area=make("Frame",gui,{
+    AnchorPoint=Vector2.new(0.5,0.5),
+    Position=UDim2.fromScale(0.5,0.47),
+    Size=UDim2.fromScale(0.94,0.32),
+    BackgroundTransparency=1,
+    ClipsDescendants=false
+})
+
+local letters={"Z","Y","R","U","X"}
+local positions={0.01,0.205,0.40,0.595,0.79}
+
+local neon={
+    Color3.fromRGB(255,25,50),
+    Color3.fromRGB(20,255,110),
+    Color3.fromRGB(235,245,255),
+    Color3.fromRGB(255,35,60),
+    Color3.fromRGB(30,255,130)
+}
+
+local labels={}
+
+for i,char in ipairs(letters) do
+    local label=make("TextLabel",area,{
+        Size=UDim2.new(0.20,0,0.9,0),
+        Position=UDim2.new(positions[i],0,0.5,0),
+        AnchorPoint=Vector2.new(0,0.5),
+        BackgroundTransparency=1,
+        Text=char,
+        TextColor3=neon[i],
+        TextTransparency=1,
+        TextScaled=true,
+        Font=Enum.Font.GothamBlack,
+        Rotation=0,
+        ZIndex=10
+    })
+
+    make("UIStroke",label,{
+        Color=Color3.fromRGB(255,255,255),
+        Thickness=0.7,
+        Transparency=0.25
+    })
+
+    labels[i]=label
+end
+
+--==================================================
+-- SUBTITLE
+--==================================================
+
+local subtitle=make("TextLabel",gui,{
+    AnchorPoint=Vector2.new(0.5,0.5),
+    Position=UDim2.fromScale(0.5,0.68),
+    Size=UDim2.new(0.9,0,0.06,0),
+    BackgroundTransparency=1,
+    Text="BEYOND THE LIMITS",
+    TextColor3=Color3.fromRGB(255,255,255),
+    TextSize=14,
+    TextTransparency=1,
+    Font=Enum.Font.GothamBold
+})
+
+local christmas=make("TextLabel",gui,{
+    AnchorPoint=Vector2.new(0.5,0.5),
+    Position=UDim2.fromScale(0.5,0.74),
+    Size=UDim2.new(0.9,0,0.05,0),
+    BackgroundTransparency=1,
+    Text="✦  CHRISTMAS EDITION 2026  ✦",
+    TextColor3=Color3.fromRGB(30,255,140),
+    TextSize=11,
+    TextTransparency=1,
+    Font=Enum.Font.GothamBold
+})
+
+--==================================================
+-- LETTER ANIMATION
+--==================================================
+
+local directions={
+    Vector2.new(-1,-1),
+    Vector2.new(0,-1),
+    Vector2.new(1,1),
+    Vector2.new(0,1),
+    Vector2.new(1,-1)
+}
+
+task.spawn(function()
+    task.wait(0.6)
+
+    for i,label in ipairs(labels) do
+        if not alive then return end
+
+        local d=directions[i]
+
+        label.Position=UDim2.new(
+            positions[i]+d.X*0.65,0,
+            0.5+d.Y*2,0
+        )
+
+        label.Rotation=d.X*100+d.Y*65
+
+        local t=tw(label,0.9,{
+            Position=UDim2.new(positions[i],0,0.5,0),
+            Rotation=0,
+            TextTransparency=0
+        },Enum.EasingStyle.Back)
+
+        if t then t.Completed:Wait() end
+        if not alive then return end
+
+        task.wait(0.12)
+    end
+
+    if not alive then return end
+
+    -- Neon pulse
+
+    for i,label in ipairs(labels) do
+        task.spawn(function()
+            while alive and label.Parent do
+                tw(label,0.8,{
+                    TextColor3=Color3.fromRGB(255,255,255)
+                },Enum.EasingStyle.Sine)
+                task.wait(0.8)
+                if not alive then break end
+                tw(label,0.8,{
+                    TextColor3=neon[i]
+                },Enum.EasingStyle.Sine)
+                task.wait(0.8)
+            end
+        end)
+    end
+
+    -- Subtitle
+
+    if not alive then return end
+
+    tw(subtitle,0.8,{
+        TextTransparency=0
+    })
+
+    task.wait(0.4)
+
+    if not alive then return end
+
+    tw(christmas,0.8,{
+        TextTransparency=0
+    })
+
+    print("[ZYRUX] SPACE CHRISTMAS INTRO COMPLETED")
+end)
+
+print("[ZYRUX] SPACE CHRISTMAS V4 LOADED")
+local Players = game:GetService("Players")
+local UIS     = game:GetService("UserInputService")
+local TS      = game:GetService("TweenService")
+local LP      = Players.LocalPlayer
+
+do
+    pcall(function()
+        local c = LP.Character
+        local h = c and c:FindFirstChild("Head")
+        local old = h and h:FindFirstChild("DemiLeakTag")
+        if old then old:Destroy() end
+    end)
+
+    local function addTag(character)
+        local head = character:WaitForChild("Head", 10)
+        if not head then return end
+        local old = head:FindFirstChild("DemiLeakTag")
+        if old then old:Destroy() end
+
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "DemiLeakTag"
+        bb.Adornee = head
+        bb.AlwaysOnTop = true
+        bb.LightInfluence = 0
+        bb.MaxDistance = 2000
+        bb.Size = UDim2.fromOffset(280, 105)
+        bb.StudsOffset = Vector3.new(0, 5.2, 0)
+        bb.Parent = head
+
+        -- Gorrito de Navidad animado en la etiqueta
+        local santaHat = Instance.new("TextLabel")
+        santaHat.Size = UDim2.fromOffset(45, 45)
+        santaHat.Position = UDim2.new(1, -38, 0, -20)
+        santaHat.BackgroundTransparency = 1
+        santaHat.Text = "🎅"
+        santaHat.TextSize = 32
+        santaHat.Rotation = 15
+        santaHat.Parent = bb
+
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.fromScale(1, 1)
+        frame.BackgroundColor3 = Color3.fromRGB(15, 25, 18)
+        frame.BackgroundTransparency = 0.12
+        frame.BorderSizePixel = 0
+        frame.Parent = bb
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+        local grad = Instance.new("UIGradient")
+        grad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   Color3.fromRGB(18, 38, 22)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(140, 25, 35)),
+            ColorSequenceKeypoint.new(1,   Color3.fromRGB(18, 38, 22)),
+        })
+        grad.Rotation = 90
+        grad.Parent = frame
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(240, 215, 90)
+        stroke.Thickness = 2
+        stroke.Transparency = 0.15
+        stroke.Parent = frame
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, -10, 0, 26)
+        title.Position = UDim2.new(0, 10, 0, 8)
+        title.BackgroundTransparency = 1
+        title.Text = "❄️ best packet lagger ❄️"
+        title.TextColor3 = Color3.fromRGB(255, 245, 220)
+        title.TextStrokeColor3 = Color3.fromRGB(120, 15, 20)
+        title.TextStrokeTransparency = 0
+        title.Font = Enum.Font.GothamBlack
+        title.TextScaled = true
+        title.Parent = frame
+
+       task.spawn(function()
+            while bb.Parent and frame.Parent do
+                TS:Create(stroke, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    Transparency = 0.6
+                }):Play()
+                task.wait(1.2)
+                if not (bb.Parent and frame.Parent) then break end
+                TS:Create(stroke, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    Transparency = 0.15
+                }):Play()
+                task.wait(1.2)
+            end
+        end)
+    end
+
+    LP.CharacterAdded:Connect(addTag)
+    if LP.Character then task.spawn(addTag, LP.Character) end
+end
+
+-- Paleta Navideña
+local C = {
+	bg       = Color3.fromRGB(18, 22, 28),
+	input    = Color3.fromRGB(30, 38, 48),
+	btn      = Color3.fromRGB(42, 54, 68),
+	stroke   = Color3.fromRGB(215, 175, 75),
+	text     = Color3.fromRGB(240, 242, 245),
+	sub      = Color3.fromRGB(145, 170, 190),
+	title    = Color3.fromRGB(255, 215, 0),
+	startBg  = Color3.fromRGB(195, 35, 45),
+	startTxt = Color3.fromRGB(255, 255, 255),
+}
+
+local power     = 10000
+local keyName   = "F"
+local listening = false
+local minimized = false
+local locked    = false
+local enlarged  = false
+
+local function corner(p, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 14)
+	c.Parent = p
+	return c
+end
+
+local function stroke(p, col, th)
+	local s = Instance.new("UIStroke")
+	s.Color = col or C.stroke
+	s.Thickness = th or 1
+	s.Transparency = 0.25
+	s.Parent = p
+	return s
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "DxvinePacketLaggerGUI"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 120
+pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
+if not pcall(function() gui.Parent = game:GetService("CoreGui") end) then
+	gui.Parent = LP:WaitForChild("PlayerGui")
+end
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(270, 300)
+main.Position = UDim2.new(0.5, -135, 0.5, -150)
+main.BackgroundColor3 = C.bg
+main.BorderSizePixel = 0
+main.Active = true
+main.Parent = gui
+corner(main, 18)
+stroke(main, Color3.fromRGB(215, 175, 75), 1.2)
+
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Position = UDim2.fromOffset(18, 16)
+title.Size = UDim2.new(1, -110, 0, 22)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = C.title
+title.Text = "🎄 ZYRVX PACKET LAGGER"
+title.Parent = main
+
+-- Botón Minimizar (−)
+local miniBtn = Instance.new("TextButton")
+miniBtn.Size = UDim2.fromOffset(26, 26)
+miniBtn.Position = UDim2.new(1, -42, 0, 12)
+miniBtn.BackgroundColor3 = C.btn
+miniBtn.Text = "−"
+miniBtn.TextColor3 = C.sub
+miniBtn.Font = Enum.Font.GothamBold
+miniBtn.TextSize = 18
+miniBtn.AutoButtonColor = true
+miniBtn.Parent = main
+corner(miniBtn, 8)
+stroke(miniBtn, Color3.fromRGB(
