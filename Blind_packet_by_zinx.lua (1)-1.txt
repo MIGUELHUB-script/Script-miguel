@@ -1,0 +1,723 @@
+--[[ Blind-style Packet Lagger · Live UI Scale · Exact Collapse ]]
+print("[Blind packet by zinx] loaded")
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RS = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+local LP = Players.LocalPlayer
+local CONFIG_FILE = "BlindLagger_Config.json"
+
+local SETTINGS_IMAGES = {
+	"rbxassetid://71163865544493",
+	"rbxassetid://73539294944417",
+	"rbxassetid://133958847318346",
+}
+
+-- الألوان (Void)
+local PURPLE      = Color3.fromRGB(140, 70, 255)
+local PURPLE_MID  = Color3.fromRGB(80, 30, 150)
+local VOID        = Color3.fromRGB(10, 5, 18)
+local INPUT       = Color3.fromRGB(25, 12, 45)
+local GREEN       = Color3.fromRGB(40, 220, 100)
+local GREEN_DIM   = Color3.fromRGB(20, 70, 40)
+local WHITE       = Color3.fromRGB(245, 240, 255)
+local DIM         = Color3.fromRGB(160, 130, 190)
+local PINK        = Color3.fromRGB(220, 120, 255)
+
+local function corner(o, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r)
+	c.Parent = o
+	return c
+end
+local function stroke(o, col, th, tr)
+	local s = Instance.new("UIStroke")
+	s.Color = col
+	s.Thickness = th or 1.5
+	s.Transparency = tr or 0.2
+	s.Parent = o
+	return s
+end
+
+-- تنظيف
+pcall(function()
+	local pg = LP:FindFirstChild("PlayerGui")
+	if pg then
+		for _, n in ipairs({"BlindPacketLagger", "Fa4e7xxPacketLagger"}) do
+			local old = pg:FindFirstChild(n)
+			if old then old:Destroy() end
+		end
+	end
+	if gethui then
+		for _, g in ipairs(gethui():GetChildren()) do
+			if g.Name == "BlindPacketLagger" then g:Destroy() end
+		end
+	end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "BlindPacketLagger"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 999
+pcall(function() if gethui then gui.Parent = gethui() end end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+-- الحجم الأساسي
+local W, H = 340, 280
+local collapsedH = 45 -- طول الشريط وقت التصغير
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.fromOffset(W, H)
+Main.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
+Main.BackgroundColor3 = VOID
+Main.BackgroundTransparency = 0.3
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Active = true
+Main.Parent = gui
+corner(Main, 12)
+
+-- ✨ UIScale (عشان نتحكم في الحجم لايف)
+local uiScale = Instance.new("UIScale", Main)
+uiScale.Scale = 1.0
+
+local mainStroke = stroke(Main, PURPLE, 2, 0.1)
+
+-- الصورة الخلفية
+local bgImg = Instance.new("ImageLabel")
+bgImg.Size = UDim2.new(1, 0, 1, 0)
+bgImg.BackgroundTransparency = 1
+bgImg.Image = SETTINGS_IMAGES[1]
+bgImg.ImageTransparency = 0.2
+bgImg.ScaleType = Enum.ScaleType.Crop
+bgImg.ZIndex = 0
+bgImg.Parent = Main
+corner(bgImg, 12)
+
+-- طبقة تعتيم
+local overlay = Instance.new("Frame")
+overlay.Size = UDim2.new(1, 0, 1, 0)
+overlay.BackgroundColor3 = VOID
+overlay.BackgroundTransparency = 0.6 
+overlay.BorderSizePixel = 0
+overlay.ZIndex = 1
+overlay.Parent = Main
+corner(overlay, 12)
+
+-- ═══ الهيدر ═══
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, -20, 0, 30)
+header.Position = UDim2.fromOffset(10, 8)
+header.BackgroundColor3 = INPUT
+header.BackgroundTransparency = 0.4
+header.ZIndex = 2
+header.Parent = Main
+corner(header, 8)
+
+local Title = Instance.new("TextLabel")
+Title.BackgroundTransparency = 1
+Title.Size = UDim2.new(1, -80, 1, 0)
+Title.Position = UDim2.fromOffset(10, 0)
+Title.Text = "BLIND PACKET LAGGER ●"
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 13
+Title.TextColor3 = WHITE
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 3
+Title.Parent = header
+
+local settingsBtn = Instance.new("TextButton")
+settingsBtn.Size = UDim2.fromOffset(24, 24)
+settingsBtn.Position = UDim2.new(1, -58, 0.5, -12)
+settingsBtn.BackgroundColor3 = INPUT
+settingsBtn.BackgroundTransparency = 0.3
+settingsBtn.Text = "⚙"
+settingsBtn.Font = Enum.Font.GothamBold
+settingsBtn.TextSize = 13
+settingsBtn.TextColor3 = DIM
+settingsBtn.AutoButtonColor = false
+settingsBtn.ZIndex = 3
+settingsBtn.Parent = header
+corner(settingsBtn, 6)
+
+-- زرار التصغير / التكبير
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.fromOffset(24, 24)
+minBtn.Position = UDim2.new(1, -28, 0.5, -12)
+minBtn.BackgroundColor3 = INPUT
+minBtn.BackgroundTransparency = 0.3
+minBtn.Text = "−"
+minBtn.Font = Enum.Font.GothamBlack
+minBtn.TextSize = 16
+minBtn.TextColor3 = DIM
+minBtn.AutoButtonColor = false
+minBtn.ZIndex = 3
+minBtn.Parent = header
+corner(minBtn, 6)
+
+-- ═══ PACKET POWER ═══
+local powerLbl = Instance.new("TextLabel")
+powerLbl.BackgroundTransparency = 1
+powerLbl.Position = UDim2.fromOffset(15, 50)
+powerLbl.Size = UDim2.new(1, -30, 0, 14)
+powerLbl.Text = "PACKET POWER"
+powerLbl.Font = Enum.Font.GothamBold
+powerLbl.TextSize = 10
+powerLbl.TextColor3 = DIM
+powerLbl.TextXAlignment = Enum.TextXAlignment.Left
+powerLbl.ZIndex = 3
+powerLbl.Parent = Main
+
+local powerRow = Instance.new("Frame")
+powerRow.Size = UDim2.new(1, -30, 0, 35)
+powerRow.Position = UDim2.fromOffset(15, 68)
+powerRow.BackgroundColor3 = INPUT
+powerRow.BackgroundTransparency = 0.3
+powerRow.ZIndex = 3
+powerRow.Parent = Main
+corner(powerRow, 8)
+
+local minusBtn = Instance.new("TextButton")
+minusBtn.Size = UDim2.fromOffset(35, 35)
+minusBtn.BackgroundTransparency = 1
+minusBtn.Text = "-"
+minusBtn.Font = Enum.Font.GothamBold
+minusBtn.TextSize = 18
+minusBtn.TextColor3 = WHITE
+minusBtn.AutoButtonColor = false
+minusBtn.ZIndex = 4
+minusBtn.Parent = powerRow
+
+local plusBtn = Instance.new("TextButton")
+plusBtn.Size = UDim2.fromOffset(35, 35)
+plusBtn.Position = UDim2.new(1, -35, 0, 0)
+plusBtn.BackgroundTransparency = 1
+plusBtn.Text = "+"
+plusBtn.Font = Enum.Font.GothamBold
+plusBtn.TextSize = 18
+plusBtn.TextColor3 = WHITE
+plusBtn.AutoButtonColor = false
+plusBtn.ZIndex = 4
+plusBtn.Parent = powerRow
+
+local PowerBox = Instance.new("TextBox")
+PowerBox.Position = UDim2.fromOffset(40, 0)
+PowerBox.Size = UDim2.new(1, -80, 1, 0)
+PowerBox.BackgroundTransparency = 1
+PowerBox.Text = "10000"
+PowerBox.Font = Enum.Font.GothamBlack
+PowerBox.TextSize = 16
+PowerBox.TextColor3 = WHITE
+PowerBox.ClearTextOnFocus = false
+PowerBox.ZIndex = 4
+PowerBox.Parent = powerRow
+
+-- ═══ TOGGLE KEYBIND ═══
+local keyLbl = Instance.new("TextLabel")
+keyLbl.BackgroundTransparency = 1
+keyLbl.Position = UDim2.fromOffset(15, 110)
+keyLbl.Size = UDim2.new(1, -30, 0, 14)
+keyLbl.Text = "TOGGLE KEYBIND"
+keyLbl.Font = Enum.Font.GothamBold
+keyLbl.TextSize = 10
+keyLbl.TextColor3 = DIM
+keyLbl.TextXAlignment = Enum.TextXAlignment.Left
+keyLbl.ZIndex = 3
+keyLbl.Parent = Main
+
+local KeyBtn = Instance.new("TextButton")
+KeyBtn.Position = UDim2.fromOffset(15, 126)
+KeyBtn.Size = UDim2.new(1, -30, 0, 35)
+KeyBtn.BackgroundColor3 = INPUT
+KeyBtn.BackgroundTransparency = 0.3
+KeyBtn.Text = "F"
+KeyBtn.Font = Enum.Font.GothamBlack
+KeyBtn.TextSize = 15
+KeyBtn.TextColor3 = WHITE
+KeyBtn.AutoButtonColor = false
+KeyBtn.ZIndex = 3
+KeyBtn.Parent = Main
+corner(KeyBtn, 8)
+
+-- ═══ ACTIVATE ═══
+local StartBtn = Instance.new("TextButton")
+StartBtn.Position = UDim2.fromOffset(15, 170)
+StartBtn.Size = UDim2.new(1, -30, 0, 38)
+StartBtn.BackgroundColor3 = PURPLE_MID
+StartBtn.BackgroundTransparency = 0.2
+StartBtn.Text = "ACTIVATE"
+StartBtn.Font = Enum.Font.GothamBlack
+StartBtn.TextSize = 15
+StartBtn.TextColor3 = WHITE
+StartBtn.AutoButtonColor = false
+StartBtn.ZIndex = 3
+StartBtn.Parent = Main
+corner(StartBtn, 8)
+local actStroke = stroke(StartBtn, PURPLE, 1.5, 0.1)
+
+-- ═══ AUTO STEAL ═══
+local stealLbl = Instance.new("TextLabel")
+stealLbl.BackgroundTransparency = 1
+stealLbl.Position = UDim2.fromOffset(15, 216)
+stealLbl.Size = UDim2.new(1, -30, 0, 14)
+stealLbl.Text = "AUTO STEAL"
+stealLbl.Font = Enum.Font.GothamBold
+stealLbl.TextSize = 10
+stealLbl.TextColor3 = DIM
+stealLbl.TextXAlignment = Enum.TextXAlignment.Left
+stealLbl.ZIndex = 3
+stealLbl.Parent = Main
+
+local StealBtn = Instance.new("TextButton")
+StealBtn.Position = UDim2.fromOffset(15, 232)
+StealBtn.Size = UDim2.new(1, -30, 0, 35)
+StealBtn.BackgroundColor3 = GREEN_DIM
+StealBtn.BackgroundTransparency = 0.2
+StealBtn.Text = "⦿ AUTO STEAL ON"
+StealBtn.Font = Enum.Font.GothamBlack
+StealBtn.TextSize = 13
+StealBtn.TextColor3 = WHITE
+StealBtn.AutoButtonColor = false
+StealBtn.ZIndex = 3
+StealBtn.Parent = Main
+corner(StealBtn, 8)
+local stealStroke = stroke(StealBtn, GREEN, 1.5, 0.2)
+
+-- ========== SETTINGS PANEL ==========
+local settingsOpen = false
+local settingsPanel = Instance.new("Frame")
+settingsPanel.Size = UDim2.fromOffset(W, H)
+settingsPanel.BackgroundColor3 = VOID
+settingsPanel.BackgroundTransparency = 0.1
+settingsPanel.Visible = false
+settingsPanel.ZIndex = 10
+settingsPanel.Parent = Main
+corner(settingsPanel, 12)
+
+local setTitle = Instance.new("TextLabel")
+setTitle.BackgroundTransparency = 1
+setTitle.Position = UDim2.fromOffset(15, 10)
+setTitle.Size = UDim2.new(1, -50, 0, 24)
+setTitle.Text = "SETTINGS"
+setTitle.Font = Enum.Font.GothamBlack
+setTitle.TextSize = 15
+setTitle.TextColor3 = PINK
+setTitle.TextXAlignment = Enum.TextXAlignment.Left
+setTitle.ZIndex = 11
+setTitle.Parent = settingsPanel
+
+local setClose = Instance.new("TextButton")
+setClose.Size = UDim2.fromOffset(24, 24)
+setClose.Position = UDim2.new(1, -35, 0, 10)
+setClose.BackgroundColor3 = INPUT
+setClose.Text = "×"
+setClose.Font = Enum.Font.GothamBold
+setClose.TextSize = 16
+setClose.TextColor3 = WHITE
+setClose.AutoButtonColor = false
+setClose.ZIndex = 11
+setClose.Parent = settingsPanel
+corner(setClose, 6)
+
+-- الصور
+local imgRow = Instance.new("Frame")
+imgRow.Size = UDim2.new(1, -30, 0, 60)
+imgRow.Position = UDim2.fromOffset(15, 45)
+imgRow.BackgroundTransparency = 1
+imgRow.ZIndex = 11
+imgRow.Parent = settingsPanel
+
+local selectedImg = 1
+local imgButtons = {}
+for i, asset in ipairs(SETTINGS_IMAGES) do
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.fromOffset(90, 60)
+	b.Position = UDim2.fromOffset((i - 1) * 100, 0)
+	b.BackgroundColor3 = INPUT
+	b.Text = ""
+	b.AutoButtonColor = false
+	b.ZIndex = 12
+	b.Parent = imgRow
+	corner(b, 8)
+	local st = stroke(b, i == 1 and PURPLE or DIM, 1.5, i == 1 and 0.1 or 0.5)
+	local im = Instance.new("ImageLabel")
+	im.Size = UDim2.new(1, -6, 1, -6)
+	im.Position = UDim2.fromOffset(3, 3)
+	im.BackgroundTransparency = 1
+	im.Image = asset
+	im.ScaleType = Enum.ScaleType.Crop
+	im.ZIndex = 13
+	im.Parent = b
+	corner(im, 6)
+	imgButtons[i] = {btn = b, stroke = st}
+	b.MouseButton1Click:Connect(function()
+		selectedImg = i
+		bgImg.Image = asset
+		for j, info in ipairs(imgButtons) do
+			info.stroke.Color = (j == i) and PURPLE or DIM
+			info.stroke.Transparency = (j == i) and 0.1 or 0.5
+		end
+	end)
+end
+
+-- ═══ UI SCALE SECTION ═══
+local scaleLbl = Instance.new("TextLabel")
+scaleLbl.BackgroundTransparency = 1
+scaleLbl.Position = UDim2.fromOffset(15, 120)
+scaleLbl.Size = UDim2.new(1, -30, 0, 14)
+scaleLbl.Text = "UI SCALE"
+scaleLbl.Font = Enum.Font.GothamBold
+scaleLbl.TextSize = 10
+scaleLbl.TextColor3 = DIM
+scaleLbl.TextXAlignment = Enum.TextXAlignment.Left
+scaleLbl.ZIndex = 11
+scaleLbl.Parent = settingsPanel
+
+local scaleRow = Instance.new("Frame")
+scaleRow.Size = UDim2.new(1, -30, 0, 35)
+scaleRow.Position = UDim2.fromOffset(15, 138)
+scaleRow.BackgroundColor3 = INPUT
+scaleRow.BackgroundTransparency = 0.3
+scaleRow.ZIndex = 11
+scaleRow.Parent = settingsPanel
+corner(scaleRow, 8)
+
+local scaleMinus = Instance.new("TextButton")
+scaleMinus.Size = UDim2.fromOffset(35, 35)
+scaleMinus.BackgroundTransparency = 1
+scaleMinus.Text = "-"
+scaleMinus.Font = Enum.Font.GothamBold
+scaleMinus.TextSize = 18
+scaleMinus.TextColor3 = WHITE
+scaleMinus.AutoButtonColor = false
+scaleMinus.ZIndex = 12
+scaleMinus.Parent = scaleRow
+
+local scalePlus = Instance.new("TextButton")
+scalePlus.Size = UDim2.fromOffset(35, 35)
+scalePlus.Position = UDim2.new(1, -35, 0, 0)
+scalePlus.BackgroundTransparency = 1
+scalePlus.Text = "+"
+scalePlus.Font = Enum.Font.GothamBold
+scalePlus.TextSize = 18
+scalePlus.TextColor3 = WHITE
+scalePlus.AutoButtonColor = false
+scalePlus.ZIndex = 12
+scalePlus.Parent = scaleRow
+
+local ScaleBox = Instance.new("TextLabel")
+ScaleBox.Position = UDim2.fromOffset(40, 0)
+ScaleBox.Size = UDim2.new(1, -80, 1, 0)
+ScaleBox.BackgroundTransparency = 1
+ScaleBox.Text = "100%"
+ScaleBox.Font = Enum.Font.GothamBlack
+ScaleBox.TextSize = 15
+ScaleBox.TextColor3 = WHITE
+ScaleBox.ZIndex = 12
+ScaleBox.Parent = scaleRow
+
+-- ═══ SAVE BUTTON ═══
+local SaveBtn = Instance.new("TextButton")
+SaveBtn.Position = UDim2.fromOffset(15, 185)
+SaveBtn.Size = UDim2.new(1, -30, 0, 35)
+SaveBtn.BackgroundColor3 = PURPLE
+SaveBtn.BackgroundTransparency = 0.1
+SaveBtn.Text = "SAVE CONFIG"
+SaveBtn.Font = Enum.Font.GothamBlack
+SaveBtn.TextSize = 13
+SaveBtn.TextColor3 = WHITE
+SaveBtn.AutoButtonColor = false
+SaveBtn.ZIndex = 11
+SaveBtn.Parent = settingsPanel
+corner(SaveBtn, 8)
+local saveStroke = stroke(SaveBtn, PINK, 1.5, 0.1)
+
+-- ========== STATE ==========
+local lagging = false
+local lagThread = nil
+local intensity = 10000
+local toggleKey = Enum.KeyCode.F
+local toggleKeyName = "F"
+local listeningForKey = false
+local autoSteal = true
+local stealThread = nil
+local Event
+local currentScale = 1.0
+local isCollapsed = false
+
+local function clampPower(v)
+	v = tonumber(v)
+	if not v then return intensity end
+	return math.clamp(math.floor(v), 1000, 1000000)
+end
+
+local function updatePower()
+	intensity = clampPower(PowerBox.Text)
+	PowerBox.Text = tostring(intensity)
+end
+
+local function applyKeybind(name)
+	toggleKeyName = name or "F"
+	local ok, key = pcall(function() return Enum.KeyCode[toggleKeyName] end)
+	toggleKey = (ok and key) or Enum.KeyCode.F
+	KeyBtn.Text = toggleKeyName
+end
+
+local function resolveEvent()
+	local ok, net = pcall(function()
+		local packages = RS:FindFirstChild("Packages")
+		if not packages then return nil end
+		return packages:FindFirstChild("Net")
+	end)
+	if ok and net then
+		local children = net:GetChildren()
+		Event = children[230] or (children[1] and children[1]:IsA("RemoteEvent") and children[1])
+	end
+end
+resolveEvent()
+
+local function paintActivate()
+	if lagging then
+		StartBtn.Text = "DEACTIVATE"
+		StartBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+		actStroke.Color = Color3.fromRGB(255, 100, 100)
+	else
+		StartBtn.Text = "ACTIVATE"
+		StartBtn.BackgroundColor3 = PURPLE_MID
+		actStroke.Color = PURPLE
+	end
+end
+
+local function paintSteal()
+	if autoSteal then
+		StealBtn.Text = "⦿ AUTO STEAL ON"
+		StealBtn.BackgroundColor3 = GREEN_DIM
+		stealStroke.Color = GREEN
+	else
+		StealBtn.Text = "⦿ AUTO STEAL OFF"
+		StealBtn.BackgroundColor3 = INPUT
+		stealStroke.Color = DIM
+	end
+end
+
+local function startLagging()
+	if lagging then return end
+	updatePower()
+	lagging = true
+	paintActivate()
+	if not Event then resolveEvent() end
+	local payload = table.create(math.max(intensity, 1000), function() end)
+	lagThread = task.spawn(function()
+		while lagging do
+			for _ = 1, 3 do
+				if Event then pcall(function() Event:FireServer(payload) end) end
+			end
+			task.wait(0.01)
+		end
+	end)
+end
+
+local function stopLagging()
+	if not lagging then return end
+	lagging = false
+	if lagThread then pcall(task.cancel, lagThread); lagThread = nil end
+	paintActivate()
+end
+
+local function startAutoSteal()
+	if stealThread then return end
+	stealThread = task.spawn(function()
+		while autoSteal do
+			pcall(function()
+				local char = LP.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				if not hrp then return end
+				for _, v in ipairs(workspace:GetDescendants()) do
+					if v:IsA("ProximityPrompt") and v.Enabled then
+						local part = v.Parent
+						if part and part:IsA("BasePart") then
+							if (part.Position - hrp.Position).Magnitude < 15 then
+								pcall(function() fireproximityprompt(v) end)
+							end
+						end
+					end
+				end
+			end)
+			task.wait(0.1)
+		end
+		stealThread = nil
+	end)
+end
+
+local function stopAutoSteal()
+	autoSteal = false
+	if stealThread then pcall(task.cancel, stealThread); stealThread = nil end
+	paintSteal()
+end
+
+-- ═══ إعدادات وحفظ ═══
+local function saveConfig()
+	updatePower()
+	pcall(function()
+		if writefile then
+			writefile(CONFIG_FILE, HttpService:JSONEncode({
+				Power = intensity,
+				Keybind = toggleKeyName,
+				AutoSteal = autoSteal,
+				Image = selectedImg,
+				Scale = currentScale,
+			}))
+		end
+	end)
+end
+
+local function loadConfig()
+	if not (readfile and isfile and isfile(CONFIG_FILE)) then return end
+	local ok, cfg = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
+	if not (ok and type(cfg) == "table") then return end
+	if tonumber(cfg.Power) then
+		intensity = clampPower(cfg.Power)
+		PowerBox.Text = tostring(intensity)
+	end
+	if type(cfg.Keybind) == "string" and cfg.Keybind ~= "" then
+		applyKeybind(cfg.Keybind)
+	end
+	if type(cfg.Image) == "number" and SETTINGS_IMAGES[cfg.Image] then
+		selectedImg = cfg.Image
+		bgImg.Image = SETTINGS_IMAGES[selectedImg]
+	end
+	if tonumber(cfg.Scale) then
+		currentScale = math.clamp(cfg.Scale, 0.5, 1.5)
+		uiScale.Scale = currentScale
+		ScaleBox.Text = tostring(math.floor(currentScale * 100)) .. "%"
+	end
+	if cfg.AutoSteal == false then
+		autoSteal = false
+		paintSteal()
+	end
+end
+
+-- Connections
+minusBtn.MouseButton1Click:Connect(function()
+	intensity = clampPower(intensity - 1000)
+	PowerBox.Text = tostring(intensity)
+end)
+plusBtn.MouseButton1Click:Connect(function()
+	intensity = clampPower(intensity + 1000)
+	PowerBox.Text = tostring(intensity)
+end)
+PowerBox.FocusLost:Connect(updatePower)
+
+StartBtn.MouseButton1Click:Connect(function()
+	if lagging then stopLagging() else startLagging() end
+end)
+
+StealBtn.MouseButton1Click:Connect(function()
+	autoSteal = not autoSteal
+	paintSteal()
+	if autoSteal then startAutoSteal() else stopAutoSteal() end
+end)
+
+-- ═══ UI SCALE (تحديث فوري) ═══
+scaleMinus.MouseButton1Click:Connect(function()
+	currentScale = math.clamp(currentScale - 0.05, 0.5, 1.5)
+	uiScale.Scale = currentScale
+	ScaleBox.Text = tostring(math.floor(currentScale * 100)) .. "%"
+end)
+scalePlus.MouseButton1Click:Connect(function()
+	currentScale = math.clamp(currentScale + 0.05, 0.5, 1.5)
+	uiScale.Scale = currentScale
+	ScaleBox.Text = tostring(math.floor(currentScale * 100)) .. "%"
+end)
+
+SaveBtn.MouseButton1Click:Connect(function()
+	saveConfig()
+	SaveBtn.Text = "SAVED!"
+	SaveBtn.BackgroundColor3 = GREEN
+	task.delay(1, function()
+		SaveBtn.Text = "SAVE CONFIG"
+		SaveBtn.BackgroundColor3 = PURPLE
+	end)
+end)
+
+KeyBtn.MouseButton1Click:Connect(function()
+	listeningForKey = true
+	KeyBtn.Text = "..."
+end)
+
+settingsBtn.MouseButton1Click:Connect(function()
+	if isCollapsed then return end
+	settingsOpen = not settingsOpen
+	settingsPanel.Visible = settingsOpen
+end)
+setClose.MouseButton1Click:Connect(function()
+	settingsOpen = false
+	settingsPanel.Visible = false
+end)
+
+-- ═══ Minimize & Maximize (مطابق للصورة) ═══
+minBtn.MouseButton1Click:Connect(function()
+	isCollapsed = not isCollapsed
+	settingsOpen = false
+	settingsPanel.Visible = false
+
+	if isCollapsed then
+		minBtn.Text = "+"
+		TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(W, collapsedH)
+		}):Play()
+	else
+		minBtn.Text = "−"
+		TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(W, H)
+		}):Play()
+	end
+end)
+
+UIS.InputBegan:Connect(function(input, gpe)
+	if listeningForKey then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			listeningForKey = false
+			applyKeybind(input.KeyCode.Name)
+		end
+		return
+	end
+	if gpe then return end
+	if input.KeyCode == toggleKey then
+		if lagging then stopLagging() else startLagging() end
+	end
+end)
+
+-- Drag
+local dragging, dragStart, startPos
+header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = Main.Position
+	end
+end)
+UIS.InputChanged:Connect(function(input)
+	if not dragging then return end
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		local d = input.Position - dragStart
+		Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+	end
+end)
+UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+task.defer(function()
+	loadConfig()
+	paintActivate()
+	paintSteal()
+	if autoSteal then startAutoSteal() end
+end)
