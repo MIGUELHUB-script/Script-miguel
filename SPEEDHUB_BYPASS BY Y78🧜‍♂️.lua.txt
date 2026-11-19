@@ -1,0 +1,722 @@
+-- // speed BYPASS — Speed Hub style UI
+-- // Lag core (sections 1-4) intentionally preserved.
+
+-- // 1 (Services)
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui          = game:GetService("CoreGui")
+
+-- // 2 (Player + state) — original values kept
+local lp            = Players.LocalPlayer
+local activated     = false
+local active        = false
+local cfg           = { autoBrainrot = false }
+local brainrotMode  = false
+local lastBrainrotState = false
+local manualOverride = false
+local keybind       = Enum.KeyCode.E
+local waitingForKey = false
+local power         = 97000
+local lagAmount     = 0.9
+local lagConn       = nil
+
+-- // 3 (Map power to lag amount) — ORIGINAL, untouched
+local function applyPower(val)
+	power = math.clamp(val, 10000, 500000)
+	local t = (power - 10000) / 490000
+	lagAmount = t * 0.5
+end
+
+applyPower(power)
+
+-- // 4 (Start / stop lag) — ORIGINAL, untouched
+local function startLag()
+	if lagConn then lagConn:Disconnect() end
+
+	lagConn = RunService.RenderStepped:Connect(function()
+		if not activated then return end
+		if lagAmount > 0 then
+			local t = tick()
+			while tick() - t < lagAmount do end
+		end
+	end)
+end
+
+local function stopLag()
+	activated = false
+	if lagConn then lagConn:Disconnect(); lagConn = nil end
+end
+
+-- // 5 (Cleanup)
+if CoreGui:FindFirstChild("speedBypass") then
+	CoreGui.speedBypass:Destroy()
+end
+
+-- // 6 (ScreenGui)
+local gui = Instance.new("ScreenGui")
+gui.Name = "speedBypass"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = CoreGui
+
+local function corner(object, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = object
+	return c
+end
+
+local function stroke(object, color, thickness, transparency)
+	local s = Instance.new("UIStroke")
+	s.Color = color
+	s.Thickness = thickness or 1
+	s.Transparency = transparency or 0
+	s.Parent = object
+	return s
+end
+
+local function makeButton(parent, name, text, size, position, bg, textSize)
+	local b = Instance.new("TextButton")
+	b.Name = name
+	b.Size = size
+	b.Position = position
+	b.BackgroundColor3 = bg
+	b.BorderSizePixel = 0
+	b.AutoButtonColor = false
+	b.Text = text
+	b.TextColor3 = Color3.fromRGB(245, 245, 245)
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = textSize or 16
+	b.Parent = parent
+	corner(b, 18)
+	return b
+end
+
+-- // 7 (Main panel)
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(620, 640)
+main.AnchorPoint = Vector2.new(0.5, 0.5)
+main.Position = UDim2.new(0.5, 0, 0.5, 0)
+main.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.ClipsDescendants = true
+main.Parent = gui
+corner(main, 30)
+stroke(main, Color3.fromRGB(35, 35, 35), 2, 0.15)
+
+local scale = Instance.new("UIScale")
+scale.Parent = main
+
+local function updateScale()
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local viewport = camera.ViewportSize
+	scale.Scale = math.min(1, (viewport.X - 24) / 620, (viewport.Y - 24) / 640)
+end
+updateScale()
+if workspace.CurrentCamera then
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+end
+
+-- // 8 (Header)
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 106)
+header.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+header.BorderSizePixel = 0
+header.Parent = main
+corner(header, 26)
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, -250, 1, 0)
+title.Position = UDim2.fromOffset(34, 0)
+title.BackgroundTransparency = 1
+title.Text = "SpeedDuels BYPASS"
+title.TextColor3 = Color3.fromRGB(248, 248, 248)
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 24
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local lockBtn = makeButton(header, "Lock", "Lock", UDim2.fromOffset(88, 50),
+	UDim2.new(1, -218, 0.5, -25), Color3.fromRGB(20, 20, 20), 16)
+local hideBtn = makeButton(header, "Hide", "Hide", UDim2.fromOffset(88, 50),
+	UDim2.new(1, -116, 0.5, -25), Color3.fromRGB(20, 20, 20), 16)
+
+local line = Instance.new("Frame")
+line.Size = UDim2.new(1, -28, 0, 2)
+line.Position = UDim2.new(0, 14, 1, -2)
+line.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+line.BorderSizePixel = 0
+line.Parent = header
+corner(line, 2)
+
+-- // 9 (Content)
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.Size = UDim2.new(1, -70, 1, -126)
+content.Position = UDim2.fromOffset(35, 126)
+content.BackgroundTransparency = 1
+content.Parent = main
+
+local function makeLabel(parent, text, position)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 24)
+	label.Position = position
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = Color3.fromRGB(155, 155, 160)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 15
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = parent
+	return label
+end
+
+-- // 10 (Power controls)
+makeLabel(content, "POWER", UDim2.fromOffset(0, 0))
+
+local powerRow = Instance.new("Frame")
+powerRow.Size = UDim2.new(1, 0, 0, 80)
+powerRow.Position = UDim2.fromOffset(0, 40)
+powerRow.BackgroundTransparency = 1
+powerRow.Parent = content
+
+local minusBtn = makeButton(powerRow, "PowerMinus", "−", UDim2.new(0, 82, 1, 0),
+	UDim2.new(0, 0, 0, 0), Color3.fromRGB(25, 25, 25), 30)
+local plusBtn = makeButton(powerRow, "PowerPlus", "+", UDim2.new(0, 82, 1, 0),
+	UDim2.new(1, -82, 0, 0), Color3.fromRGB(25, 25, 25), 28)
+
+local powerValue = Instance.new("TextLabel")
+powerValue.Name = "PowerValue"
+powerValue.Size = UDim2.new(1, -196, 1, 0)
+powerValue.Position = UDim2.fromOffset(98, 0)
+powerValue.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+powerValue.BorderSizePixel = 0
+powerValue.Text = tostring(power)
+powerValue.TextColor3 = Color3.fromRGB(245, 245, 245)
+powerValue.Font = Enum.Font.GothamBlack
+powerValue.TextSize = 27
+powerValue.Parent = powerRow
+corner(powerValue, 18)
+
+local function refreshPower()
+	powerValue.Text = tostring(power)
+end
+minusBtn.MouseButton1Click:Connect(function()
+	applyPower(power - 10000)
+	refreshPower()
+end)
+plusBtn.MouseButton1Click:Connect(function()
+	applyPower(power + 10000)
+	refreshPower()
+end)
+
+-- // 11 (Toggle keybind)
+makeLabel(content, "TOGGLE KEYBIND", UDim2.fromOffset(0, 140))
+
+local kbBtn = makeButton(content, "KeybindButton", keybind.Name,
+	UDim2.new(1, 0, 0, 78), UDim2.fromOffset(0, 174),
+	Color3.fromRGB(25, 25, 25), 25)
+kbBtn.MouseButton1Click:Connect(function()
+	waitingForKey = true
+	kbBtn.Text = "..."
+	kbBtn.TextColor3 = Color3.fromRGB(120, 190, 255)
+end)
+
+-- // 12 (AUTO BRAINROT switch — controls the original lag toggle)
+local autoRow = Instance.new("Frame")
+autoRow.Name = "AutoBrainrotRow"
+autoRow.Size = UDim2.new(1, 0, 0, 70)
+autoRow.Position = UDim2.fromOffset(0, 274)
+autoRow.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+autoRow.BorderSizePixel = 0
+autoRow.Parent = content
+corner(autoRow, 18)
+
+local autoLabel = Instance.new("TextLabel")
+autoLabel.Size = UDim2.new(1, -125, 1, 0)
+autoLabel.Position = UDim2.fromOffset(26, 0)
+autoLabel.BackgroundTransparency = 1
+autoLabel.Text = "AUTO BRAINROT"
+autoLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+autoLabel.Font = Enum.Font.GothamBold
+autoLabel.TextSize = 19
+autoLabel.TextXAlignment = Enum.TextXAlignment.Left
+autoLabel.Parent = autoRow
+
+local switch = makeButton(autoRow, "AutoSwitch", "", UDim2.fromOffset(78, 40),
+	UDim2.new(1, -100, 0.5, -20), Color3.fromRGB(55, 55, 55), 14)
+corner(switch, 22)
+
+local knob = Instance.new("Frame")
+knob.Name = "Knob"
+knob.Size = UDim2.fromOffset(28, 28)
+knob.Position = UDim2.fromOffset(6, 6)
+knob.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+knob.BorderSizePixel = 0
+knob.Parent = switch
+corner(knob, 20)
+
+-- Forward declaration used by the automatic/manual state synchronizers.
+local compactActivate
+
+-- // 13 (Activate button)
+local activateBtn = makeButton(content, "Activate", "ACTIVATE",
+	UDim2.new(1, 0, 0, 92), UDim2.fromOffset(0, 366),
+	Color3.fromRGB(18, 18, 18), 27)
+activateBtn.TextColor3 = Color3.fromRGB(245, 245, 245)
+corner(activateBtn, 24)
+
+local function setLagVisual(on)
+	if on then
+		activateBtn.Text = "DEACTIVATE"
+		activateBtn.BackgroundColor3 = Color3.fromRGB(20, 65, 45)
+	else
+		activateBtn.Text = "ACTIVATE"
+		activateBtn.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+	end
+end
+
+local function setAutoVisual(on)
+	if on then
+		switch.BackgroundColor3 = Color3.fromRGB(20, 135, 83)
+		knob.Position = UDim2.new(1, -34, 0, 6)
+	else
+		switch.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+		knob.Position = UDim2.fromOffset(6, 6)
+	end
+end
+
+-- Bridge the supplied Auto Brainrot logic to the existing lag-core functions.
+-- The original startLag() and stopLag() implementations above remain unchanged.
+local function flipLag(on, isManual)
+	if on then
+		if not activated then
+			activated = true
+			startLag()
+		end
+	else
+		if activated then stopLag() end
+	end
+	active = activated
+	if isManual then manualOverride = true end
+	setLagVisual(active)
+end
+
+local function toggle()
+	flipLag(not active, true)
+end
+
+-- AUTO BRAINROT switch only enables/disables automatic speed detection.
+switch.MouseButton1Click:Connect(function()
+	cfg.autoBrainrot = not cfg.autoBrainrot
+	setAutoVisual(cfg.autoBrainrot)
+end)
+activateBtn.MouseButton1Click:Connect(function()
+	toggle()
+	if compactActivate then
+		compactActivate.Text = activateBtn.Text
+		compactActivate.BackgroundColor3 = activateBtn.BackgroundColor3
+	end
+end)
+
+-- Supplied Auto Brainrot behavior: slow character = lag on, fast character = lag off.
+RunService.Heartbeat:Connect(function()
+	if not cfg.autoBrainrot then
+		if brainrotMode then
+			brainrotMode = false
+			lastBrainrotState = false
+			if active then flipLag(false, false) end
+		end
+		if compactActivate then
+			compactActivate.Text = activateBtn.Text
+			compactActivate.BackgroundColor3 = activateBtn.BackgroundColor3
+		end
+		return
+	end
+
+	local char = lp.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	local currentSpeed = hum.WalkSpeed
+	if currentSpeed < 25 then
+		if not lastBrainrotState then
+			brainrotMode = true
+			lastBrainrotState = true
+			manualOverride = false
+			if not active then flipLag(true, false) end
+		end
+	else
+		if lastBrainrotState then
+			brainrotMode = false
+			lastBrainrotState = false
+			manualOverride = false
+			if active then flipLag(false, false) end
+		end
+	end
+	if compactActivate then
+		compactActivate.Text = activateBtn.Text
+		compactActivate.BackgroundColor3 = activateBtn.BackgroundColor3
+	end
+end)
+
+setAutoVisual(cfg.autoBrainrot)
+setLagVisual(active)
+
+-- // 15 (Compact / minimized view matching the supplied reference)
+local locked = false
+
+local compact = Instance.new("Frame")
+compact.Name = "CompactMenu"
+compact.Size = UDim2.fromOffset(260, 96)
+compact.AnchorPoint = Vector2.new(0.5, 0.5)
+compact.Position = UDim2.new(0.5, 0, 0.5, 0)
+compact.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+compact.BorderSizePixel = 0
+compact.Active = true
+compact.Draggable = true
+compact.Visible = false
+compact.ClipsDescendants = true
+compact.Parent = gui
+corner(compact, 20)
+stroke(compact, Color3.fromRGB(35, 35, 35), 2, 0.15)
+
+local compactScale = Instance.new("UIScale")
+compactScale.Parent = compact
+local function updateCompactScale()
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local viewport = camera.ViewportSize
+	compactScale.Scale = math.min(1, (viewport.X - 24) / 260, (viewport.Y - 24) / 96)
+end
+updateCompactScale()
+if workspace.CurrentCamera then
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateCompactScale)
+end
+
+local compactHeader = Instance.new("Frame")
+compactHeader.Name = "Header"
+compactHeader.Size = UDim2.new(1, 0, 0, 42)
+compactHeader.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+compactHeader.BorderSizePixel = 0
+compactHeader.Parent = compact
+corner(compactHeader, 18)
+
+local compactTitle = Instance.new("TextLabel")
+compactTitle.Size = UDim2.new(1, -145, 1, 0)
+compactTitle.Position = UDim2.fromOffset(12, 0)
+compactTitle.BackgroundTransparency = 1
+compactTitle.Text = "SpeedDuels Bypass"
+compactTitle.TextColor3 = Color3.fromRGB(248, 248, 248)
+compactTitle.Font = Enum.Font.GothamBlack
+compactTitle.TextSize = 11
+compactTitle.TextXAlignment = Enum.TextXAlignment.Left
+compactTitle.Parent = compactHeader
+
+local compactLock = makeButton(compactHeader, "Lock", "Lock",
+	UDim2.fromOffset(40, 24), UDim2.new(1, -96, 0.5, -12),
+	Color3.fromRGB(20, 20, 20), 10)
+local openBtn = makeButton(compactHeader, "Open", "Open",
+	UDim2.fromOffset(46, 24), UDim2.new(1, -52, 0.5, -12),
+	Color3.fromRGB(20, 20, 20), 10)
+
+local compactLine = Instance.new("Frame")
+compactLine.Size = UDim2.new(1, -24, 0, 2)
+compactLine.Position = UDim2.new(0, 12, 1, -2)
+compactLine.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+compactLine.BorderSizePixel = 0
+compactLine.Parent = compactHeader
+corner(compactLine, 2)
+
+compactActivate = makeButton(compact, "Activate", activateBtn.Text,
+	UDim2.new(1, -24, 0, 34), UDim2.fromOffset(12, 54),
+	Color3.fromRGB(18, 18, 18), 12)
+corner(compactActivate, 12)
+
+local function refreshCompact()
+	compactActivate.Text = activateBtn.Text
+	compactActivate.BackgroundColor3 = activateBtn.BackgroundColor3
+end
+
+local function setLocked(value)
+	locked = value
+	main.Draggable = not locked
+	compact.Draggable = not locked
+	lockBtn.Text = locked and "Unlock" or "Lock"
+	compactLock.Text = locked and "Unlock" or "Lock"
+end
+
+lockBtn.MouseButton1Click:Connect(function()
+	setLocked(not locked)
+end)
+compactLock.MouseButton1Click:Connect(function()
+	setLocked(not locked)
+end)
+
+hideBtn.Text = "Hide"
+hideBtn.MouseButton1Click:Connect(function()
+	refreshCompact()
+	main.Visible = false
+	compact.Visible = true
+end)
+
+openBtn.MouseButton1Click:Connect(function()
+	compact.Visible = false
+	main.Visible = true
+end)
+
+compactActivate.MouseButton1Click:Connect(function()
+	toggle()
+	refreshCompact()
+end)
+
+-- // 16 (Input listener)
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if waitingForKey then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			keybind = input.KeyCode
+			kbBtn.Text = keybind.Name
+			kbBtn.TextColor3 = Color3.fromRGB(245, 245, 245)
+			waitingForKey = false
+		end
+		return
+	end
+	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == keybind then
+		-- E (or the selected key) toggles the bypass activation.
+		flipLag(not active, true)
+		if compactActivate then
+			compactActivate.Text = activateBtn.Text
+			compactActivate.BackgroundColor3 = activateBtn.BackgroundColor3
+		end
+	end
+end)
+
+-- // 17 (Re-apply on respawn) — original pattern
+lp.CharacterAdded:Connect(function()
+	task.wait(1)
+	if activated then
+		stopLag()
+		activated = true
+		startLag()
+		active = true
+		setLagVisual(true)
+		if compactActivate then
+			compactActivate.Text = activateBtn.Text
+			compactActivate.BackgroundColor3 = activateBtn.BackgroundColor3
+		end
+	end
+end)
+
+-- // End
+
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
+print("SPEED HUB BYPASS DEOBF BY speed 🧜‍♂️ By speed 🧜‍♂️ DC: gg/8g4tWSzJD @everyone @here")
