@@ -1,0 +1,346 @@
+repeat task.wait() until game:IsLoaded()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local LP = Player
+
+--// ================= AUTO STEAL =================
+local Steal = {
+ AutoStealEnabled = true,
+ StealRadius = 65,  -- locked 65 both code + menu
+ StealDuration = 1.2,  -- full hold before trigger
+ Data = {}
+}
+
+local isStealing, stealStartTime, autoConn = false, nil, nil
+
+local function isMyPlotByName(plotName)
+ local plots = workspace:FindFirstChild("Plots")
+ local plot = plots and plots:FindFirstChild(plotName)
+ if not plot then return false end
+ local sign = plot:FindFirstChild("PlotSign")
+ local yourBase = sign and sign:FindFirstChild("YourBase")
+ return yourBase and yourBase:IsA("BillboardGui") and yourBase.Enabled == true or false
+end
+
+local function findNearestPrompt()
+ local char = LP.Character
+ local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
+ local plots = workspace:FindFirstChild("Plots")
+ if not root or not plots then return nil end
+
+ local nearest, distance = nil, math.huge
+ for _, plot in ipairs(plots:GetChildren()) do
+  if plot:IsA("Model") and not isMyPlotByName(plot.Name) then
+  local podiums = plot:FindFirstChild("AnimalPodiums")
+  if podiums then
+   for _, podium in ipairs(podiums:GetChildren()) do
+    local base = podium:FindFirstChild("Base")
+    local spawn = base and base:FindFirstChild("Spawn")
+    if spawn then
+    local d = (spawn.Position - root.Position).Magnitude
+    if d <= Steal.StealRadius and d < distance then
+     local found
+     local attachment = spawn:FindFirstChild("PromptAttachment")
+     local candidates = attachment and attachment:GetChildren() or spawn:GetDescendants()
+     for _, prompt in ipairs(candidates) do
+      if prompt:IsA("ProximityPrompt") and prompt.ActionText and prompt.ActionText:find("Steal") then
+      found = prompt
+      break
+      end
+     end
+     if found then nearest, distance = found, d end
+    end
+    end
+   end
+  end
+  end
+ end
+ return nearest
+end
+
+local function executeSteal(prompt)
+ if isStealing then return end
+ if not Steal.Data[prompt] then
+  Steal.Data[prompt] = {hold = {}, trigger = {}, ready = true}
+  if getconnections then
+  pcall(function()
+   for _, c in ipairs(getconnections(prompt.PromptButtonHoldBegan)) do
+    if c.Function then table.insert(Steal.Data[prompt].hold, c.Function) end
+   end
+   for _, c in ipairs(getconnections(prompt.Triggered)) do
+    if c.Function then table.insert(Steal.Data[prompt].trigger, c.Function) end
+   end
+  end)
+  end
+ end
+
+ local data = Steal.Data[prompt]
+ if not data.ready then return end
+ data.ready, isStealing, stealStartTime = false, true, tick()
+
+ task.spawn(function()
+  -- 1) Start the hold (game's own handlers)
+  for _, fn in ipairs(data.hold) do pcall(fn, prompt) end
+
+  -- 2) Full duration before fire
+  task.wait(Steal.StealDuration)
+
+  -- 3) Fire + retry for lag
+  pcall(function() fireproximityprompt(prompt) end)
+  for _, fn in ipairs(data.trigger) do pcall(fn, prompt) end
+
+  task.wait(0.12)
+  pcall(function() fireproximityprompt(prompt) end)
+  for _, fn in ipairs(data.trigger) do pcall(fn, prompt) end
+
+  -- 4) Clear visual timer
+  stealStartTime = nil
+
+  -- 5) Cooldown
+  task.wait(0.45)
+  isStealing = false
+  data.ready = true
+ end)
+end
+
+local function startAutoSteal()
+ if autoConn then return end
+ autoConn = RunService.Heartbeat:Connect(function()
+  if Steal.AutoStealEnabled and not isStealing then
+  local prompt = findNearestPrompt()
+  if prompt then executeSteal(prompt) end
+  end
+ end)
+end
+
+_G.AutoSteal = Steal
+
+--// ================= UI =================
+local oldGui = PlayerGui:FindFirstChild(".gg/VioletteCC")
+if oldGui then oldGui:Destroy() end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "https://discord.gg/3a6y8hssA"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+-- Main Frame
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 760, 0, 280)
+
+local Scale = Instance.new("UIScale")
+Scale.Scale = 0.40
+Scale.Parent = Main
+Main.Position = UDim2.new(0.02, 0, 0.04, 0)
+Main.BackgroundColor3 = Color3.fromRGB(19, 5, 30)
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 65)
+MainCorner.Parent = Main
+
+-- Border
+local Border = Instance.new("UIStroke")
+Border.Thickness = 5
+Border.Color = Color3.fromRGB(177, 75, 255)
+Border.Parent = Main
+
+local BorderGradient = Instance.new("UIGradient")
+BorderGradient.Color = ColorSequence.new({
+ ColorSequenceKeypoint.new(0, Color3.fromRGB(137, 65, 255)),
+ ColorSequenceKeypoint.new(0.5, Color3.fromRGB(222, 75, 255)),
+ ColorSequenceKeypoint.new(1, Color3.fromRGB(135, 65, 255))
+})
+BorderGradient.Parent = Border
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0.68, 0, 0, 75)
+Title.Position = UDim2.new(0.07, 0, 0.12, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "FALLS4K"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 48
+Title.Font = Enum.Font.GothamBlack
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Main
+
+-- Author
+local Author = Instance.new("TextLabel")
+Author.Size = UDim2.new(0.7, 0, 0, 55)
+Author.Position = UDim2.new(0.07, 0, 0.31, 0)
+Author.BackgroundTransparency = 1
+Author.Text = "zyrvx"
+Author.TextColor3 = Color3.fromRGB(139, 105, 180)
+Author.TextSize = 34
+Author.Font = Enum.Font.GothamBlack
+Author.TextXAlignment = Enum.TextXAlignment.Left
+Author.Parent = Main
+
+-- Toggle Background
+local Toggle = Instance.new("TextButton")
+Toggle.Size = UDim2.new(0, 220, 0, 100)
+Toggle.Position = UDim2.new(1, -300, 0, 45)
+Toggle.BackgroundColor3 = Color3.fromRGB(145, 70, 255)
+Toggle.Text = ""
+Toggle.AutoButtonColor = false
+Toggle.Parent = Main
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(1, 0)
+ToggleCorner.Parent = Toggle
+
+-- Toggle Circle
+local Circle = Instance.new("Frame")
+Circle.Size = UDim2.new(0, 76, 0, 76)
+Circle.Position = UDim2.new(1, -88, 0.5, -38)
+Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Circle.Parent = Toggle
+
+local CircleCorner = Instance.new("UICorner")
+CircleCorner.CornerRadius = UDim.new(1, 0)
+CircleCorner.Parent = Circle
+
+local Enabled = true
+
+Toggle.MouseButton1Click:Connect(function()
+ Enabled = not Enabled
+ Steal.AutoStealEnabled = Enabled
+
+ TweenService:Create(Toggle, TweenInfo.new(0.2), {
+  BackgroundColor3 = Enabled and Color3.fromRGB(145, 70, 255) or Color3.fromRGB(55, 40, 65)
+ }):Play()
+
+ TweenService:Create(Circle, TweenInfo.new(0.2), {
+  Position = Enabled and UDim2.new(1, -88, 0.5, -38) or UDim2.new(0, 12, 0.5, -38)
+ }):Play()
+end)
+
+-- Radius Label (hard-locked 65)
+local RadiusLabel = Instance.new("TextLabel")
+RadiusLabel.Size = UDim2.new(0.6, 0, 0, 70)
+RadiusLabel.Position = UDim2.new(0.07, 0, 0.58, 0)
+RadiusLabel.BackgroundTransparency = 1
+RadiusLabel.Text = "RADIUS (65)"
+RadiusLabel.TextColor3 = Color3.fromRGB(154, 112, 198)
+RadiusLabel.TextSize = 42
+RadiusLabel.Font = Enum.Font.GothamBlack
+RadiusLabel.TextXAlignment = Enum.TextXAlignment.Left
+RadiusLabel.Parent = Main
+
+-- Percentage (real-time)
+local Percentage = Instance.new("TextLabel")
+Percentage.Size = UDim2.new(0, 160, 0, 70)
+Percentage.Position = UDim2.new(1, -240, 0.58, 0)
+Percentage.BackgroundTransparency = 1
+Percentage.Text = "0%"
+Percentage.TextColor3 = Color3.fromRGB(255, 255, 255)
+Percentage.TextSize = 48
+Percentage.Font = Enum.Font.GothamBlack
+Percentage.TextXAlignment = Enum.TextXAlignment.Right
+Percentage.Parent = Main
+
+-- Bar Background
+local Slider = Instance.new("Frame")
+Slider.Size = UDim2.new(0.86, 0, 0, 52)
+Slider.Position = UDim2.new(0.07, 0, 0.78, 0)
+Slider.BackgroundColor3 = Color3.fromRGB(32, 16, 49)
+Slider.BorderSizePixel = 0
+Slider.Parent = Main
+
+local SliderCorner = Instance.new("UICorner")
+SliderCorner.CornerRadius = UDim.new(1, 0)
+SliderCorner.Parent = Slider
+
+-- Bar Fill
+local Fill = Instance.new("Frame")
+Fill.Size = UDim2.new(0, 0, 1, 0)
+Fill.BackgroundColor3 = Color3.fromRGB(172, 65, 255)
+Fill.BorderSizePixel = 0
+Fill.Parent = Slider
+
+local FillCorner = Instance.new("UICorner")
+FillCorner.CornerRadius = UDim.new(1, 0)
+FillCorner.Parent = Fill
+
+local FillGradient = Instance.new("UIGradient")
+FillGradient.Color = ColorSequence.new({
+ ColorSequenceKeypoint.new(0, Color3.fromRGB(145, 65, 255)),
+ ColorSequenceKeypoint.new(1, Color3.fromRGB(218, 70, 255))
+})
+FillGradient.Parent = Fill
+
+--// REAL-TIME PROGRESS — bar + % track the actual steal timer 0 → 100
+RunService.RenderStepped:Connect(function()
+ local progress = 0
+ if isStealing and stealStartTime then
+  progress = math.clamp((tick() - stealStartTime) / Steal.StealDuration, 0, 1)
+ end
+ Fill.Size = UDim2.new(progress, 0, 1, 0)
+ Percentage.Text = math.floor(progress * 100 + 0.5) .. "%"
+end)
+
+--// DRAG SYSTEM
+local panelDragging = false
+local dragStart
+local startPosition
+
+local function IsInsideControl(obj, control)
+ return obj == control or obj:IsDescendantOf(control)
+end
+
+local function CanStartPanelDrag(obj)
+ return obj == Main
+  or (obj:IsA("GuiObject") and not IsInsideControl(obj, Toggle))
+end
+
+local function ConnectPanelDrag(obj)
+ if CanStartPanelDrag(obj) then
+  obj.InputBegan:Connect(function(input)
+  if input.UserInputType == Enum.UserInputType.MouseButton1
+  or input.UserInputType == Enum.UserInputType.Touch then
+   panelDragging = true
+   dragStart = input.Position
+   startPosition = Main.Position
+  end
+  end)
+ end
+end
+
+ConnectPanelDrag(Main)
+for _, obj in ipairs(Main:GetDescendants()) do
+ ConnectPanelDrag(obj)
+end
+
+UserInputService.InputChanged:Connect(function(input)
+ if panelDragging and (
+  input.UserInputType == Enum.UserInputType.MouseMovement
+  or input.UserInputType == Enum.UserInputType.Touch
+ ) then
+  local delta = input.Position - dragStart
+  Main.Position = UDim2.new(
+  startPosition.X.Scale, startPosition.X.Offset + delta.X,
+  startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+  )
+ end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+ if input.UserInputType == Enum.UserInputType.MouseButton1
+ or input.UserInputType == Enum.UserInputType.Touch then
+  panelDragging = false
+ end
+end)
+
+pcall(startAutoSteal)
+
+print("By Y78🧜♂")
+print("By Y78🧜♂")
