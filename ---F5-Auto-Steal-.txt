@@ -1,0 +1,515 @@
+-- F5 • Auto Steal (Futuristic Compact)
+repeat task.wait() until game:IsLoaded()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TS = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local LP = Players.LocalPlayer
+
+local Steal = {
+	Enabled = false,
+	Radius = 61,  -- Radio de cancelación (si te alejás más de esto, se cancela)
+	TriggerRadius = 14, -- Solo empieza a robar si estás a ≤14 studs del brainrot
+	Duration = 1.3,
+	Mode = "NX1", -- NX1 = 90% | NX2 = 80%
+	Data = {}
+}
+
+local isStealing = false
+local stopTime = 0.96
+local stopRadius = 9
+local scale = 1
+local locked = true
+local conn = nil
+local fill, pct, radLbl, main
+
+-- ===================== UTIL =====================
+local function isMyPlot(name)
+	local plot = workspace:FindFirstChild("Plots") and workspace.Plots:FindFirstChild(name)
+	if not plot then return false end
+	local sign = plot:FindFirstChild("PlotSign")
+	local yb = sign and sign:FindFirstChild("YourBase")
+	return yb and yb:IsA("BillboardGui") and yb.Enabled
+end
+
+local function findNearest()
+	local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	local plots = workspace:FindFirstChild("Plots")
+	if not plots then return end
+
+	local best, bestDist, bestName = nil, math.huge, nil
+	for _, plot in ipairs(plots:GetChildren()) do
+		if isMyPlot(plot.Name) then continue end
+		local pods = plot:FindFirstChild("AnimalPodiums")
+		if not pods then continue end
+		for _, pod in ipairs(pods:GetChildren()) do
+			pcall(function()
+				local spawn = pod.Base and pod.Base:FindFirstChild("Spawn")
+				if spawn then
+					local dist = (spawn.Position - root.Position).Magnitude
+					-- Solo detecta si estás dentro del TriggerRadius (14 studs)
+					if dist < bestDist and dist <= Steal.TriggerRadius then
+						local att = spawn:FindFirstChild("PromptAttachment")
+						if att then
+							for _, c in ipairs(att:GetChildren()) do
+								if c:IsA("ProximityPrompt") and c.ActionText and c.ActionText:find("Steal") then
+									best, bestDist, bestName = c, dist, pod.Name
+									break
+								end
+							end
+						end
+					end
+				end
+			end)
+		end
+	end
+	return best, bestName
+end
+
+-- ===================== STEAL =====================
+local function doSteal(prompt, name)
+	if isStealing then return end
+	if not Steal.Data[prompt] then
+		Steal.Data[prompt] = {hold = {}, trigger = {}, ready = true}
+		pcall(function()
+			if getconnections then
+				for _, c in ipairs(getconnections(prompt.PromptButtonHoldBegan)) do
+					if c.Function then table.insert(Steal.Data[prompt].hold, c.Function) end
+				end
+				for _, c in ipairs(getconnections(prompt.Triggered)) do
+					if c.Function then table.insert(Steal.Data[prompt].trigger, c.Function) end
+				end
+			end
+		end)
+	end
+
+	local data = Steal.Data[prompt]
+	if not data.ready then return end
+	data.ready = false
+	isStealing = true
+
+	task.spawn(function()
+		for _, f in ipairs(data.hold) do task.spawn(f) end
+		local start = tick()
+		local stopAt = Steal.Mode == "NX2" and 0.80 or 0.90
+		local fired = false
+
+		-- Fase 1
+		while isStealing and Steal.Enabled do
+			local t = tick() - start
+			if t >= stopTime then break end
+			local p = math.clamp(t / Steal.Duration, 0, 1)
+			if fill then fill.Size = UDim2.new(p, 0, 1, 0) end
+			if pct then pct.Text = math.floor(p * 100) .. "%" end
+			if not prompt.Parent then break end
+			local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+			if hrp and (hrp.Position - prompt.Parent.Parent.Position).Magnitude > Steal.Radius then break end
+			task.wait()
+		end
+
+		if fill then fill.Size = UDim2.new(stopAt, 0, 1, 0) end
+		if pct then pct.Text = math.floor(stopAt * 100) .. "%" end
+
+		-- Espera acercarse
+		local t2 = tick()
+		while isStealing and Steal.Enabled do
+			if tick() - t2 > 2.2 then
+				data.ready = true
+				isStealing = false
+				if fill then fill.Size = UDim2.new(0,0,1,0) end
+				if pct then pct.Text = "0%" end
+				local np, nn = findNearest()
+				if np then doSteal(np, nn) end
+				return
+			end
+			if not prompt.Parent then break end
+			local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local d = (hrp.Position - prompt.Parent.Parent.Position).Magnitude
+				if d <= stopRadius then break end
+				if d > Steal.Radius then
+					data.ready = true
+					isStealing = false
+					if fill then fill.Size = UDim2.new(0,0,1,0) end
+					if pct then pct.Text = "0%" end
+					return
+				end
+			end
+			task.wait()
+		end
+
+		-- Fase final
+		if isStealing and Steal.Enabled then
+			local fs = tick()
+			local fd = math.max(Steal.Duration - stopTime, 0.05)
+			while true do
+				local fp = math.clamp((tick() - fs) / fd, 0, 1)
+				if fill then fill.Size = UDim2.new(stopAt + fp * (1 - stopAt), 0, 1, 0) end
+				if pct then pct.Text = math.floor((stopAt + fp * (1 - stopAt)) * 100) .. "%" end
+				if fp >= 1 and not fired then
+					fired = true
+					pcall(function()
+						for _, f in ipairs(data.trigger) do task.spawn(f) end
+						local r = ReplicatedStorage:FindFirstChild("StealAnimal")
+						if r and name then r:FireServer(name) end
+						if prompt then prompt:Fire() end
+					end)
+					break
+				end
+				task.wait()
+			end
+		end
+
+		if fill then fill.Size = UDim2.new(0,0,1,0) end
+		if pct then pct.Text = "0%" end
+		data.ready = true
+		isStealing = false
+	end)
+end
+
+local function start()
+	if conn then return end
+	conn = RunService.Heartbeat:Connect(function()
+		if not Steal.Enabled or isStealing then return end
+		local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+		local p, n = findNearest()
+		-- findNearest ya filtra por TriggerRadius (14 studs), así que si hay resultado = estás cerca
+		if p then doSteal(p, n) end
+	end)
+end
+
+local function stop()
+	if conn then conn:Disconnect() conn = nil end
+	isStealing = false
+	if fill then TS:Create(fill, TweenInfo.new(0.2), {Size = UDim2.new(0,0,1,0)}):Play() end
+	if pct then pct.Text = "0%" end
+end
+
+-- ===================== GUI =====================
+local function createGUI()
+	local old = CoreGui:FindFirstChild("AutoStealBar")
+	if old then old:Destroy() end
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "AutoStealBar"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 999
+	gui.Parent = CoreGui
+
+	local w, h = 320 * scale, 58 * scale
+
+	main = Instance.new("Frame", gui)
+	main.Size = UDim2.new(0, w, 0, h)
+	main.Position = UDim2.new(0.5, -w/2, 0.5, -h/2)
+	-- Fondo verde oscuro navideño
+	main.BackgroundColor3 = Color3.fromRGB(10, 38, 15)
+	main.BackgroundTransparency = 0.08
+	main.BorderSizePixel = 0
+	main.Active = true
+	main.Draggable = not locked
+	main.ClipsDescendants = true
+	Instance.new("UICorner", main).CornerRadius = UDim.new(0, 16)
+
+	-- ❄️ Copos de nieve flotando DENTRO del panel
+	local snowSymbols = {"❄", "✦", "❅", "⁕", "✶"}
+	for si = 1, 7 do
+		local sf = Instance.new("TextLabel", main)
+		sf.BackgroundTransparency = 1
+		sf.Text = snowSymbols[(si % #snowSymbols) + 1]
+		sf.TextColor3 = Color3.fromRGB(200, 235, 255)
+		sf.Font = Enum.Font.GothamBlack
+		sf.TextSize = math.random(7, 12) * scale
+		sf.ZIndex = 3
+		sf.Size = UDim2.new(0, 14*scale, 1, 0)
+		sf.Position = UDim2.new(math.random(5, 90)/100, 0, -0.2, 0)
+		sf.ClipsDescendants = false
+		task.spawn(function()
+			task.wait(si * 0.4)
+			while sf and sf.Parent do
+				local startX = math.random(5, 88)/100
+				sf.Position = UDim2.new(startX, 0, -0.3, 0)
+				sf.TextTransparency = 0.1
+				TS:Create(sf, TweenInfo.new(2 + si*0.25, Enum.EasingStyle.Linear), {
+					Position = UDim2.new(startX + math.random(-3,3)/100, 0, 1.2, 0),
+					TextTransparency = 0.5
+				}):Play()
+				task.wait(2 + si*0.25)
+			end
+		end)
+	end
+
+	-- Gradiente navideño en el panel (verde oscuro → rojo oscuro)
+	local panelGrad = Instance.new("UIGradient", main)
+	panelGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(8, 50, 18)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(18, 30, 10)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(55, 10, 10))
+	})
+	panelGrad.Rotation = 135
+
+	-- Borde rojo/verde alternando (luces navideñas)
+	local stroke = Instance.new("UIStroke", main)
+	stroke.Thickness = 2.5
+	stroke.Transparency = 0.1
+	task.spawn(function()
+		local xmasCols = {
+			Color3.fromRGB(220, 30, 30),
+			Color3.fromRGB(255, 80, 80),
+			Color3.fromRGB(50, 200, 80),
+			Color3.fromRGB(255, 215, 0),
+			Color3.fromRGB(220, 30, 30),
+			Color3.fromRGB(50, 180, 60),
+			Color3.fromRGB(255, 215, 0),
+		}
+		local i = 1
+		while main and main.Parent do
+			local t = TS:Create(stroke, TweenInfo.new(1.1, Enum.EasingStyle.Sine), {Color = xmasCols[i]})
+			t:Play() t.Completed:Wait()
+			i = i % #xmasCols + 1
+		end
+	end)
+
+	-- Luces decorativas (bolitas de colores en el tope)
+	local lightColors = {
+		Color3.fromRGB(255, 40, 40),
+		Color3.fromRGB(50, 210, 80),
+		Color3.fromRGB(255, 215, 0),
+		Color3.fromRGB(40, 160, 255),
+		Color3.fromRGB(255, 100, 180),
+		Color3.fromRGB(255, 40, 40),
+		Color3.fromRGB(50, 210, 80),
+	}
+	for li, lc in ipairs(lightColors) do
+		local bulb = Instance.new("Frame", main)
+		bulb.Size = UDim2.new(0, 7*scale, 0, 7*scale)
+		bulb.Position = UDim2.new(0, (li * 40 - 20)*scale, 0, -3*scale)
+		bulb.BackgroundColor3 = lc
+		bulb.ZIndex = 8
+		bulb.BorderSizePixel = 0
+		Instance.new("UICorner", bulb).CornerRadius = UDim.new(1, 0)
+		-- Parpadeo suave
+		task.spawn(function()
+			while bulb and bulb.Parent do
+				TS:Create(bulb, TweenInfo.new(0.5 + li*0.1, Enum.EasingStyle.Sine), {BackgroundTransparency = 0.6}):Play()
+				task.wait(0.5 + li*0.1)
+				TS:Create(bulb, TweenInfo.new(0.5 + li*0.1, Enum.EasingStyle.Sine), {BackgroundTransparency = 0}):Play()
+				task.wait(0.5 + li*0.1)
+			end
+		end)
+	end
+
+	-- Título 🎄
+	local title = Instance.new("TextLabel", main)
+	title.Size = UDim2.new(0, 110*scale, 0, 18*scale)
+	title.Position = UDim2.new(0, 12*scale, 0, 6*scale)
+	title.BackgroundTransparency = 1
+	title.Text = "🎄 ZYRVX HUB"
+	title.TextColor3 = Color3.fromRGB(255, 215, 0)
+	title.Font = Enum.Font.GothamBlack
+	title.TextSize = 14*scale
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.ZIndex = 5
+	-- Título parpadea dorado/blanco
+	task.spawn(function()
+		while title and title.Parent do
+			TS:Create(title, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {TextColor3 = Color3.fromRGB(255,255,200)}):Play()
+			task.wait(1.5)
+			TS:Create(title, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {TextColor3 = Color3.fromRGB(255,200,0)}):Play()
+			task.wait(1.5)
+		end
+	end)
+
+	local sub = Instance.new("TextLabel", main)
+	sub.Size = UDim2.new(0, 130*scale, 0, 12*scale)
+	sub.Position = UDim2.new(0, 12*scale, 0, 21*scale)
+	sub.BackgroundTransparency = 1
+	sub.Text = "⛄ By Migizin & Valen"
+	sub.TextColor3 = Color3.fromRGB(180, 230, 200)
+	sub.Font = Enum.Font.GothamBold
+	sub.TextSize = 9*scale
+	sub.TextXAlignment = Enum.TextXAlignment.Left
+	sub.ZIndex = 5
+
+	radLbl = Instance.new("TextLabel", main)
+	radLbl.Size = UDim2.new(0, 90*scale, 0, 14*scale)
+	radLbl.Position = UDim2.new(1, -100*scale, 0, 5*scale)
+	radLbl.BackgroundTransparency = 1
+	radLbl.Text = ""
+	radLbl.TextColor3 = Color3.fromRGB(180, 255, 180)
+	radLbl.Font = Enum.Font.GothamBold
+	radLbl.TextSize = 11*scale
+	radLbl.TextXAlignment = Enum.TextXAlignment.Right
+	radLbl.ZIndex = 5
+
+	-- ❄️ Barra de nieve navideña
+	local barBg = Instance.new("Frame", main)
+	barBg.Size = UDim2.new(0.68, 0, 0, 16*scale)
+	barBg.Position = UDim2.new(0, 12*scale, 0, 33*scale)
+	barBg.BackgroundColor3 = Color3.fromRGB(5, 20, 8)
+	barBg.BackgroundTransparency = 0.1
+	barBg.ZIndex = 4
+	Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+	local barStroke = Instance.new("UIStroke", barBg)
+	barStroke.Thickness = 1.4
+	barStroke.Color = Color3.fromRGB(180, 230, 255)
+	barStroke.Transparency = 0.2
+
+	fill = Instance.new("Frame", barBg)
+	fill.Size = UDim2.new(0, 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	fill.ZIndex = 5
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+	-- Gradiente nieve: azul cielo → blanco nieve → celeste
+	local grad = Instance.new("UIGradient", fill)
+	grad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(100, 180, 255)),
+		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(220, 240, 255)),
+		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(180, 220, 255))
+	})
+
+	-- Offset animado → efecto nieve moviéndose
+	task.spawn(function()
+		local offset = 0
+		while fill and fill.Parent do
+			offset = (offset + 0.005) % 1
+			grad.Offset = Vector2.new(-offset, 0)
+			task.wait()
+		end
+	end)
+
+	-- Copos de nieve ❄ dentro de la barra (textos pequeños que se mueven)
+	for sni = 1, 4 do
+		local sn = Instance.new("TextLabel", barBg)
+		sn.BackgroundTransparency = 1
+		sn.Text = "❄"
+		sn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		sn.Font = Enum.Font.GothamBlack
+		sn.TextSize = 9 * scale
+		sn.ZIndex = 7
+		sn.Size = UDim2.new(0, 14, 1, 0)
+		sn.Position = UDim2.new(math.random(10,80)/100, 0, 0, 0)
+		sn.TextTransparency = 0.3
+		task.spawn(function()
+			while sn and sn.Parent do
+				local startX = math.random(0, 90)/100
+				sn.Position = UDim2.new(startX, 0, 0, 0)
+				TS:Create(sn, TweenInfo.new(1.8 + sni*0.3, Enum.EasingStyle.Linear), {
+					Position = UDim2.new(startX + 0.05, 0, 0, 0),
+					TextTransparency = 0.1
+				}):Play()
+				task.wait(1.8 + sni*0.3)
+			end
+		end)
+	end
+
+	-- Glow de nieve en el extremo derecho
+	local glow = Instance.new("Frame", fill)
+	glow.Size = UDim2.new(0, 20, 2, 0)
+	glow.Position = UDim2.new(1, -10, 0.5, 0)
+	glow.AnchorPoint = Vector2.new(0.5, 0.5)
+	glow.BackgroundColor3 = Color3.fromRGB(200, 235, 255)
+	glow.BackgroundTransparency = 0.05
+	glow.ZIndex = 6
+	Instance.new("UICorner", glow).CornerRadius = UDim.new(1, 0)
+	-- Glow pulsa como nieve brillando
+	task.spawn(function()
+		while glow and glow.Parent do
+			TS:Create(glow, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {BackgroundColor3 = Color3.fromRGB(255,255,255), BackgroundTransparency = 0}):Play()
+			task.wait(0.8)
+			TS:Create(glow, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {BackgroundColor3 = Color3.fromRGB(150,210,255), BackgroundTransparency = 0.3}):Play()
+			task.wait(0.8)
+		end
+	end)
+
+	pct = Instance.new("TextLabel", main)
+	pct.Size = UDim2.new(0, 42*scale, 0, 16*scale)
+	pct.Position = UDim2.new(0.70, 0, 0, 33*scale)
+	pct.BackgroundTransparency = 1
+	pct.Text = "0%"
+	pct.TextColor3 = Color3.fromRGB(200, 240, 255)
+	pct.Font = Enum.Font.GothamBlack
+	pct.TextSize = 13*scale
+	pct.ZIndex = 6
+
+	Steal.Mode = "NX1"
+
+	-- Candado
+	local lock = Instance.new("TextButton", main)
+	lock.Size = UDim2.new(0, 20*scale, 0, 20*scale)
+	lock.Position = UDim2.new(0.5, -10*scale, 0, 5*scale)
+	lock.BackgroundTransparency = 1
+	lock.Text = "🔒"
+	lock.TextColor3 = Color3.fromRGB(255, 215, 0)
+	lock.Font = Enum.Font.GothamBlack
+	lock.TextSize = 14*scale
+	lock.ZIndex = 7
+	lock.MouseButton1Click:Connect(function()
+		locked = not locked
+		lock.Text = locked and "🔒" or "🔓"
+		main.Draggable = not locked
+	end)
+
+	-- Escala
+	local function scaleBtn(txt, x, delta)
+		local b = Instance.new("TextButton", main)
+		b.Size = UDim2.new(0, 18*scale, 0, 18*scale)
+		b.Position = UDim2.new(0.5, x, 0, 6*scale)
+		b.BackgroundTransparency = 1
+		b.Text = txt
+		b.TextColor3 = Color3.fromRGB(255, 215, 0)
+		b.Font = Enum.Font.GothamBlack
+		b.TextSize = 16*scale
+		b.ZIndex = 7
+		b.MouseButton1Click:Connect(function()
+			scale = math.clamp(scale + delta, 0.6, 1.6)
+			createGUI()
+		end)
+	end
+	scaleBtn("−", 55*scale, -0.1)
+	scaleBtn("+", 75*scale, 0.1)
+
+	-- Toggle
+	local tog = Instance.new("TextButton", main)
+	tog.Size = UDim2.new(0, 54*scale, 0, 24*scale)
+	tog.Position = UDim2.new(1, -62*scale, 0.5, -12*scale)
+	tog.BackgroundColor3 = Color3.fromRGB(80, 10, 10)
+	tog.BackgroundTransparency = 0.15
+	tog.Text = "❌ OFF"
+	tog.TextColor3 = Color3.fromRGB(255, 160, 160)
+	tog.Font = Enum.Font.GothamBlack
+	tog.TextSize = 11*scale
+	tog.ZIndex = 6
+	Instance.new("UICorner", tog).CornerRadius = UDim.new(0, 8)
+	local ts = Instance.new("UIStroke", tog)
+	ts.Color = Color3.fromRGB(220, 50, 50)
+	ts.Thickness = 1.6
+	ts.Transparency = 0.2
+
+	tog.MouseButton1Click:Connect(function()
+		Steal.Enabled = not Steal.Enabled
+		if Steal.Enabled then
+			tog.Text = "🎄 ON"
+			tog.BackgroundColor3 = Color3.fromRGB(10, 80, 25)
+			tog.TextColor3 = Color3.fromRGB(180, 255, 180)
+			ts.Color = Color3.fromRGB(50, 210, 80)
+			ts.Transparency = 0.1
+			start()
+		else
+			tog.Text = "❌ OFF"
+			tog.BackgroundColor3 = Color3.fromRGB(80, 10, 10)
+			tog.TextColor3 = Color3.fromRGB(255, 160, 160)
+			ts.Color = Color3.fromRGB(220, 50, 50)
+			ts.Transparency = 0.2
+			stop()
+		end
+	end)
+end
+
+createGUI()
+print("MVP HUB • Auto Steal Futuristic Compact cargado")
